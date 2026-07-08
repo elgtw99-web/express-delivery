@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>快遞物流狀態查詢系統</title>
+<title>採購貨物追蹤儀表盤</title>
 <style>
   :root{
     --bg:#0f1220; --card:#181c2e; --card2:#1f2440; --line:#2a3050;
@@ -13,92 +13,111 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:"Segoe UI","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
     background:linear-gradient(160deg,#0f1220,#141833 60%,#0f1220);color:var(--txt);min-height:100vh}
-  .wrap{max-width:860px;margin:0 auto;padding:28px 18px 60px}
-  header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .wrap{max-width:1080px;margin:0 auto;padding:26px 18px 60px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:4px;flex-wrap:wrap}
   .logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--pri),#7d5bff);
     display:flex;align-items:center;justify-content:center;font-size:22px}
   h1{font-size:22px;margin:0}
-  .tagline{color:var(--sub);font-size:13px;margin:2px 0 22px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px;
-    box-shadow:0 8px 30px rgba(0,0,0,.25)}
-  .row{display:flex;gap:10px;flex-wrap:wrap}
-  label{font-size:12px;color:var(--sub);display:block;margin:0 0 6px 2px}
-  input,select{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--line);
-    background:var(--card2);color:var(--txt);font-size:15px;outline:none}
-  input:focus,select:focus{border-color:var(--pri)}
-  .grow{flex:1;min-width:180px}
-  button{cursor:pointer;border:none;border-radius:10px;font-size:15px;font-weight:600;padding:12px 20px;
-    background:linear-gradient(135deg,var(--pri),var(--pri2));color:#fff;transition:.15s;white-space:nowrap}
-  button:hover{filter:brightness(1.08)}
-  button:disabled{opacity:.55;cursor:not-allowed}
-  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--sub);font-weight:500;padding:8px 14px;font-size:13px}
-  .settings-head{display:flex;justify-content:space-between;align-items:center;cursor:pointer}
-  .settings-head h3{margin:0;font-size:15px}
-  .settings-body{margin-top:14px;display:none}
-  .settings-body.open{display:block}
-  .hint{font-size:12px;color:var(--sub);line-height:1.6;margin-top:8px}
+  .tagline{color:var(--sub);font-size:13px;margin:2px 0 20px}
   .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;margin-left:8px}
   .badge.demo{background:rgba(246,196,84,.15);color:var(--warn);border:1px solid rgba(246,196,84,.35)}
   .badge.live{background:rgba(49,196,141,.15);color:var(--ok);border:1px solid rgba(49,196,141,.35)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px;
+    box-shadow:0 8px 30px rgba(0,0,0,.25)}
+  /* 統計卡 */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .stat .n{font-size:26px;font-weight:800}
+  .stat .l{font-size:12px;color:var(--sub);margin-top:2px}
+  .stat.t .n{color:var(--pri)} .stat.s .n{color:var(--ok)} .stat.e .n{color:var(--err)}
+  /* 表單 */
+  label{font-size:12px;color:var(--sub);display:block;margin:0 0 6px 2px}
+  input,select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);
+    background:var(--card2);color:var(--txt);font-size:14px;outline:none}
+  input:focus,select:focus{border-color:var(--pri)}
+  .form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  button{cursor:pointer;border:none;border-radius:10px;font-size:14px;font-weight:600;padding:11px 18px;
+    background:linear-gradient(135deg,var(--pri),var(--pri2));color:#fff;transition:.15s;white-space:nowrap}
+  button:hover{filter:brightness(1.08)}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--sub);font-weight:500;padding:7px 12px;font-size:13px}
+  .btn-sm{padding:6px 12px;font-size:12.5px}
+  .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .card-head h3{margin:0;font-size:16px}
   .toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--sub);cursor:pointer;user-select:none}
   .switch{width:40px;height:22px;border-radius:20px;background:var(--line);position:relative;transition:.2s}
   .switch.on{background:var(--ok)}
-  .switch::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;
-    background:#fff;transition:.2s}
+  .switch::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}
   .switch.on::after{left:20px}
-  /* result */
-  #result{margin-top:4px}
-  .status-bar{display:flex;align-items:center;gap:12px;background:var(--card2);border:1px solid var(--line);
-    border-radius:12px;padding:14px 16px;margin-bottom:16px;flex-wrap:wrap}
-  .status-bar .co{font-weight:700;font-size:16px}
-  .status-bar .no{color:var(--sub);font-size:13px}
-  .state-pill{margin-left:auto;font-weight:700;font-size:14px;padding:6px 14px;border-radius:20px}
-  .s-3{background:rgba(49,196,141,.15);color:var(--ok)}   /* 已簽收 */
-  .s-transit{background:rgba(91,140,255,.15);color:var(--pri)} /* 運輸中 */
-  .s-other{background:rgba(246,196,84,.15);color:var(--warn)}
-  .timeline{list-style:none;margin:0;padding:6px 0 0}
-  .timeline li{position:relative;padding:0 0 24px 30px}
-  .timeline li::before{content:"";position:absolute;left:7px;top:20px;bottom:-4px;width:2px;background:var(--track)}
-  .timeline li:last-child::before{display:none}
-  .dot{position:absolute;left:0;top:4px;width:16px;height:16px;border-radius:50%;background:var(--track);
-    border:3px solid var(--card)}
-  .timeline li.first .dot{background:var(--ok);box-shadow:0 0 0 4px rgba(49,196,141,.18)}
-  .t-time{font-size:12px;color:var(--sub)}
-  .t-text{font-size:14.5px;margin-top:3px;line-height:1.5}
-  .timeline li.first .t-text{color:var(--txt);font-weight:600}
-  .empty,.loading,.error{text-align:center;padding:30px 10px;color:var(--sub)}
-  .error{color:var(--err)}
-  .spinner{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--pri);border-radius:50%;
-    display:inline-block;animation:spin .8s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  .samples{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-  .chip{font-size:12px;padding:5px 12px;border-radius:20px;background:var(--card2);border:1px solid var(--line);
+  /* 篩選列 */
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .chip{font-size:13px;padding:7px 14px;border-radius:20px;background:var(--card);border:1px solid var(--line);
     color:var(--sub);cursor:pointer}
-  .chip:hover{border-color:var(--pri);color:var(--txt)}
-  footer{text-align:center;color:var(--sub);font-size:12px;margin-top:24px;line-height:1.7}
+  .chip.active{border-color:var(--pri);color:#fff;background:rgba(91,140,255,.12)}
+  .toolbar input{max-width:220px;margin-left:auto}
+  /* 訂單卡 */
+  .order{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+  .order-top{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .order-main{flex:1;min-width:220px}
+  .order-title{font-size:15.5px;font-weight:700}
+  .order-meta{font-size:12.5px;color:var(--sub);margin-top:5px;line-height:1.7}
+  .order-meta b{color:var(--txt);font-weight:600}
+  .state-pill{font-weight:700;font-size:13px;padding:5px 13px;border-radius:20px;white-space:nowrap}
+  .s-signed{background:rgba(49,196,141,.15);color:var(--ok)}
+  .s-transit{background:rgba(91,140,255,.15);color:var(--pri)}
+  .s-exc{background:rgba(241,107,107,.15);color:var(--err)}
+  .s-pending{background:rgba(154,163,199,.15);color:var(--sub)}
+  .latest{font-size:13px;color:var(--sub);margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+  .latest b{color:var(--txt)}
+  .order-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  /* 時間軸 */
+  .timeline{list-style:none;margin:12px 0 0;padding:8px 0 0;border-top:1px solid var(--line);display:none}
+  .timeline.open{display:block}
+  .timeline li{position:relative;padding:0 0 20px 26px}
+  .timeline li::before{content:"";position:absolute;left:6px;top:18px;bottom:-2px;width:2px;background:var(--track)}
+  .timeline li:last-child::before{display:none}
+  .dot{position:absolute;left:0;top:4px;width:14px;height:14px;border-radius:50%;background:var(--track);border:3px solid var(--card)}
+  .timeline li.first .dot{background:var(--ok);box-shadow:0 0 0 4px rgba(49,196,141,.18)}
+  .t-time{font-size:11.5px;color:var(--sub)}
+  .t-text{font-size:13.5px;margin-top:2px;line-height:1.5}
+  .timeline li.first .t-text{font-weight:600}
+  .empty{text-align:center;padding:40px 10px;color:var(--sub)}
+  .hint{font-size:12px;color:var(--sub);line-height:1.7;margin-top:8px}
   code{background:var(--card2);padding:1px 6px;border-radius:5px;font-size:12px;color:var(--warn)}
+  .msg{font-size:13px;min-height:18px;margin-top:8px}
+  .settings-body{display:none;margin-top:12px} .settings-body.open{display:block}
+  @media(max-width:720px){.stats{grid-template-columns:repeat(2,1fr)}.form-grid{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">📦</div>
-    <div>
-      <h1>快遞物流狀態查詢系統 <span id="modeBadge" class="badge demo">示範模式</span></h1>
+    <div class="logo">📊</div>
+    <div><h1>採購貨物追蹤儀表盤 <span id="modeBadge" class="badge demo">示範模式</span></h1></div>
+    <div class="toggle" style="margin-left:auto" onclick="toggleDemo()">
+      <div id="demoSwitch" class="switch on"></div><span>示範模式</span>
     </div>
   </header>
-  <p class="tagline">支援順豐、圓通、中通、申通、韻達、EMS 等 · 聚合平台 API（快遞100）即時查詢</p>
+  <p class="tagline">品項 · 供應商 · 購買時間 · 訂單編號 · 快遞號碼 一站追蹤，狀態更新自動推 LINE 群組，群組打關鍵字可主動查詢</p>
 
-  <!-- 查詢卡 -->
+  <!-- 統計 -->
+  <div class="stats">
+    <div class="stat"><div class="n" id="stTotal">0</div><div class="l">總訂單</div></div>
+    <div class="stat t"><div class="n" id="stTransit">0</div><div class="l">運輸中</div></div>
+    <div class="stat s"><div class="n" id="stSigned">0</div><div class="l">已簽收</div></div>
+    <div class="stat e"><div class="n" id="stExc">0</div><div class="l">異常件</div></div>
+  </div>
+
+  <!-- 新增訂單 -->
   <div class="card">
-    <div class="row">
-      <div class="grow" style="flex:2">
-        <label>快遞單號</label>
-        <input id="trackNo" placeholder="輸入快遞單號，例如 SF1234567890123" autocomplete="off">
-      </div>
-      <div class="grow">
-        <label>快遞公司</label>
-        <select id="carrier">
+    <div class="card-head"><h3>➕ 新增採購訂單</h3></div>
+    <div class="form-grid">
+      <div><label>採購品項</label><input id="fItems" placeholder="例：A4影印紙 5箱"></div>
+      <div><label>供應商 / 賣家</label><input id="fSupplier" placeholder="例：晨光文具"></div>
+      <div><label>購買時間</label><input id="fDate" type="date"></div>
+      <div><label>訂單編號</label><input id="fOrderNo" placeholder="例：PO-20260708-001"></div>
+      <div><label>快遞公司</label>
+        <select id="fCarrier">
           <option value="auto">自動識別</option>
           <option value="shunfeng">順豐速運</option>
           <option value="yuantong">圓通速遞</option>
@@ -110,285 +129,201 @@
           <option value="huitongkuaidi">百世快遞</option>
         </select>
       </div>
+      <div><label>快遞號碼</label><input id="fTrackNo" placeholder="例：SF1234567890123"></div>
     </div>
-    <div class="row" style="margin-top:14px;align-items:center">
-      <button id="queryBtn" onclick="doQuery()">查詢物流</button>
-      <div class="toggle" onclick="toggleDemo()" style="margin-left:6px">
-        <div id="demoSwitch" class="switch on"></div><span>示範模式</span>
-      </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
+      <button id="addBtn" onclick="addOrder()">加入追蹤</button>
+      <span class="hint" style="margin:0">加入後自動訂閱，狀態更新會推到 LINE 群組</span>
     </div>
-    <div class="samples">
-      <span style="font-size:12px;color:var(--sub)">試試看：</span>
-      <span class="chip" onclick="fillSample('SF1234567890123','shunfeng')">順豐（已簽收）</span>
-      <span class="chip" onclick="fillSample('YT7654321098765','yuantong')">圓通（運輸中）</span>
-      <span class="chip" onclick="fillSample('EMS9988776655443','ems')">EMS（已攬收）</span>
-    </div>
+    <div id="addMsg" class="msg"></div>
   </div>
 
-  <!-- 結果卡 -->
-  <div class="card" id="resultCard">
-    <div id="result">
-      <div class="empty">輸入單號並按「查詢物流」即可查看即時物流狀態</div>
-    </div>
+  <!-- 篩選 + 清單 -->
+  <div class="toolbar">
+    <span class="chip active" data-f="all" onclick="setFilter(this)">全部</span>
+    <span class="chip" data-f="transit" onclick="setFilter(this)">運輸中</span>
+    <span class="chip" data-f="signed" onclick="setFilter(this)">已簽收</span>
+    <span class="chip" data-f="exc" onclick="setFilter(this)">異常件</span>
+    <button class="btn-ghost btn-sm" onclick="refreshAll()">↻ 全部更新</button>
+    <input id="search" placeholder="搜尋品項/供應商/單號…" oninput="render()">
   </div>
+  <div id="orders"></div>
 
-  <!-- LINE 簽收通知 -->
+  <!-- 後端 / LINE 機器人狀態 -->
   <div class="card">
-    <h3 style="margin:0 0 12px;font-size:15px">🔔 簽收 LINE 通知</h3>
-    <div class="row" style="align-items:flex-end">
-      <div class="grow" style="flex:2">
-        <label>LINE 通知對象 ID（選填，留空用後端預設對象）</label>
-        <input id="lineTo" placeholder="你的 LINE userId，例 Uxxxxxxxx（或群組ID）">
-      </div>
-      <button onclick="subscribeLine()">訂閱此單號</button>
-      <button class="btn-ghost" onclick="testLine()" style="padding:12px 16px">測試 LINE</button>
-    </div>
-    <div id="subMsg" class="hint" style="min-height:18px"></div>
-    <p class="hint">
-      按「訂閱此單號」後，系統會把該單號交給快遞100監控；當狀態變為
-      <b>已簽收</b>時，後端會自動用 <b>LINE Messaging API</b> 推播通知你。<br>
-      （需先啟動後端並在 <code>.env</code> 設好快遞100與 LINE 金鑰，並關閉「示範模式」。）
-    </p>
-  </div>
-
-  <!-- 部署狀態 -->
-  <div class="card">
-    <div class="settings-head" onclick="toggleSettings()">
-      <h3>⚙️ 後端連線狀態</h3>
-      <span class="btn-ghost" id="setToggle">展開</span>
+    <div class="card-head" onclick="toggleSettings()" style="cursor:pointer">
+      <h3>⚙️ 後端與 LINE 機器人狀態</h3><span class="btn-ghost btn-sm" id="setToggle">展開</span>
     </div>
     <div class="settings-body" id="settingsBody">
       <div id="cfgStatus" class="hint">尚未連線後端。</div>
       <p class="hint" style="margin-top:12px">
-        金鑰全部保存在後端 <code>.env</code>，前端不接觸任何密鑰。<br>
-        後端設定請見專案內 <code>.env.example</code> 與 <code>README.md</code>。
+        <b>群組自動推播：</b>訂單狀態一有更新，後端就把「品項/供應商/單號/最新狀態」推到 LINE 群組。<br>
+        <b>關鍵字查詢：</b>在群組輸入 <code>訂單編號</code>、<code>快遞單號</code>、<code>品項</code> 或 <code>供應商</code>，機器人即回覆目前狀態。<br>
+        設定方式：LINE 後台 Webhook URL 設為 <code>https://你的網域/api/line/webhook</code>，並在 <code>.env</code> 填 <code>LINE_CHANNEL_SECRET</code>、<code>LINE_DEFAULT_TO</code>(群組ID)。
       </p>
     </div>
   </div>
 
-  <footer>
-    快遞物流狀態查詢系統 · 單一 HTML 部署 · 各物流狀態第一時間查詢<br>
-    直接以瀏覽器開啟本檔，或上傳到任何靜態網站空間即可使用
-  </footer>
+  <p class="hint" style="text-align:center">採購貨物追蹤儀表盤 · 快遞100 即時物流 + LINE 群組機器人</p>
 </div>
 
 <script>
-/* ============ 設定 ============ */
-// 後端網址：同源部署留空即可；前端與後端不同網域時填後端網址
-const API_BASE='';
+const API_BASE='';        // 同源部署留空
 let DEMO=true;
+let FILTER='all';
+let ORDERS=[];
 
+const CARRIER_NAME={shunfeng:'順豐速運',yuantong:'圓通速遞',zhongtong:'中通快遞',shentong:'申通快遞',
+  yunda:'韻達速遞',jd:'京東物流',ems:'EMS/郵政',huitongkuaidi:'百世快遞'};
+function autoDetect(no){no=(no||'').toUpperCase();
+  if(/^SF/.test(no))return'shunfeng';if(/^YT/.test(no))return'yuantong';
+  if(/^(ZT|75|78)/.test(no))return'zhongtong';if(/^(ST|77|55|66)/.test(no))return'shentong';
+  if(/^(YD|12|19|31|39|43)/.test(no))return'yunda';if(/^JD/.test(no))return'jd';
+  if(/^(EMS|E[A-Z])/.test(no)||/^\d{13}$/.test(no))return'ems';
+  if(/^(HT|A|B|K)/.test(no))return'huitongkuaidi';return'shunfeng';}
+
+/* 狀態分類 */
+function cat(state){if(state===3)return'signed';if([2,4,6].includes(state))return'exc';return'transit';}
+function pill(state,label){const c=cat(state);
+  const cls=c==='signed'?'s-signed':c==='exc'?'s-exc':(state===null||state===undefined?'s-pending':'s-transit');
+  return `<span class="state-pill ${cls}">${label||'待更新'}</span>`;}
+
+/* ===== 資料存取（示範/真實） ===== */
+async function loadOrders(){
+  if(DEMO){ORDERS=demoData();render();return;}
+  try{const r=await fetch(API_BASE+'/api/orders');ORDERS=await r.json();}
+  catch(e){ORDERS=[];}
+  render();
+}
+async function addOrder(){
+  const o={items:v('fItems'),supplier:v('fSupplier'),purchaseTime:v('fDate'),
+    orderNo:v('fOrderNo'),trackNo:v('fTrackNo').trim(),carrier:document.getElementById('fCarrier').value};
+  if(!o.trackNo){addMsg('請輸入快遞號碼','err');return;}
+  document.getElementById('addBtn').disabled=true;addMsg('新增中…','');
+  try{
+    if(DEMO){
+      const com=o.carrier==='auto'?autoDetect(o.trackNo):o.carrier;
+      const mk=mockStatus(o.trackNo,com);
+      ORDERS.unshift({id:'demo'+Date.now(),...o,carrier:com,carrierName:CARRIER_NAME[com],
+        state:mk.state,stateLabel:mk.stateLabel,latest:mk.list[0]?.text||'',timeline:mk.list,
+        lastUpdate:Date.now(),subscribed:true});
+      addMsg('✓ 已加入（示範）','ok');
+    }else{
+      const r=await fetch(API_BASE+'/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});
+      const j=await r.json();if(!r.ok||j.error)throw new Error(j.error);
+      addMsg('✓ 已加入追蹤'+(j.warn?'（'+j.warn+'）':''),j.warn?'err':'ok');
+      await loadOrders();
+    }
+    ['fItems','fSupplier','fOrderNo','fTrackNo'].forEach(id=>document.getElementById(id).value='');
+    render();
+  }catch(e){addMsg('新增失敗：'+e.message,'err');}
+  finally{document.getElementById('addBtn').disabled=false;}
+}
+async function refreshOrder(id){
+  const o=ORDERS.find(x=>x.id===id);if(!o)return;
+  if(DEMO){const mk=mockStatus(o.trackNo,o.carrier);Object.assign(o,{state:mk.state,stateLabel:mk.stateLabel,latest:mk.list[0]?.text||'',timeline:mk.list,lastUpdate:Date.now()});render();return;}
+  try{const r=await fetch(API_BASE+'/api/orders/'+id+'/refresh',{method:'POST'});const j=await r.json();
+    if(j.order)Object.assign(o,j.order);render();}catch(e){alert('更新失敗：'+e.message);}
+}
+async function refreshAll(){for(const o of ORDERS){await refreshOrder(o.id);}}
+async function delOrder(id){
+  if(!confirm('確定移除這筆訂單追蹤？'))return;
+  if(!DEMO){try{await fetch(API_BASE+'/api/orders/'+id,{method:'DELETE'});}catch(e){}}
+  ORDERS=ORDERS.filter(x=>x.id!==id);render();
+}
+
+/* ===== 畫面 ===== */
+function render(){
+  const kw=v('search').trim();
+  let list=ORDERS.filter(o=>FILTER==='all'||cat(o.state)===FILTER);
+  if(kw)list=list.filter(o=>[o.items,o.supplier,o.orderNo,o.trackNo].some(x=>(x||'').includes(kw)));
+  // 統計（用全部，不受篩選）
+  document.getElementById('stTotal').textContent=ORDERS.length;
+  document.getElementById('stTransit').textContent=ORDERS.filter(o=>cat(o.state)==='transit'&&o.state!=null).length;
+  document.getElementById('stSigned').textContent=ORDERS.filter(o=>o.state===3).length;
+  document.getElementById('stExc').textContent=ORDERS.filter(o=>cat(o.state)==='exc').length;
+
+  const box=document.getElementById('orders');
+  if(!list.length){box.innerHTML='<div class="empty">目前沒有符合條件的訂單。新增一筆採購訂單開始追蹤吧！</div>';return;}
+  box.innerHTML=list.map(o=>{
+    const tl=(o.timeline||[]).map((it,i)=>`<li class="${i===0?'first':''}"><span class="dot"></span>
+      <div class="t-time">${it.time||''}</div><div class="t-text">${esc(it.text||'')}</div></li>`).join('');
+    return `<div class="order">
+      <div class="order-top">
+        <div class="order-main">
+          <div class="order-title">${esc(o.items||'(未填品項)')}</div>
+          <div class="order-meta">
+            供應商：<b>${esc(o.supplier||'-')}</b> &nbsp;·&nbsp; 訂單：<b>${esc(o.orderNo||'-')}</b><br>
+            ${o.carrierName||CARRIER_NAME[o.carrier]||o.carrier}　<b>${esc(o.trackNo)}</b>
+            ${o.purchaseTime?' &nbsp;·&nbsp; 購買：'+esc(o.purchaseTime):''}
+          </div>
+        </div>
+        ${pill(o.state,o.stateLabel)}
+      </div>
+      ${o.latest?`<div class="latest">最新：<b>${esc(o.latest)}</b></div>`:''}
+      <div class="order-actions">
+        <button class="btn-ghost btn-sm" onclick="toggleTl('${o.id}')">物流軌跡</button>
+        <button class="btn-ghost btn-sm" onclick="refreshOrder('${o.id}')">↻ 更新</button>
+        <button class="btn-ghost btn-sm" onclick="delOrder('${o.id}')">移除</button>
+      </div>
+      <ul class="timeline" id="tl-${o.id}">${tl||'<li class="t-text" style="padding-left:0;color:var(--sub)">尚無軌跡</li>'}</ul>
+    </div>`;
+  }).join('');
+}
+function setFilter(el){FILTER=el.dataset.f;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');render();}
+function toggleTl(id){document.getElementById('tl-'+id).classList.toggle('open');}
+function toggleDemo(){DEMO=!DEMO;document.getElementById('demoSwitch').classList.toggle('on',DEMO);
+  const b=document.getElementById('modeBadge');b.className='badge '+(DEMO?'demo':'live');b.textContent=DEMO?'示範模式':'即時模式';loadOrders();}
+function toggleSettings(){const e=document.getElementById('settingsBody');e.classList.toggle('open');
+  document.getElementById('setToggle').textContent=e.classList.contains('open')?'收合':'展開';}
+
+const v=id=>document.getElementById(id).value;
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function addMsg(t,cls){const el=document.getElementById('addMsg');el.textContent=t;
+  el.style.color=cls==='ok'?'var(--ok)':cls==='err'?'var(--err)':'var(--sub)';}
+
+/* ===== 示範資料 ===== */
+function mockStatus(no,car){
+  const now=Date.now();const t=h=>new Date(now-h*3600e3).toISOString().slice(0,16).replace('T',' ');
+  if(/^SF/i.test(no))return{state:3,stateLabel:'已簽收',list:[
+    {time:t(1),text:'【深圳市】您的快件已被前台代簽收，感謝使用順豐'},
+    {time:t(4),text:'【深圳市】派件員 王師傅 正在派送'},
+    {time:t(10),text:'【深圳市】快件到達深圳福田集散中心'},
+    {time:t(20),text:'【廣州市】順豐速運已收取快件'}]};
+  if(/^EMS/i.test(no))return{state:1,stateLabel:'已攬收',list:[
+    {time:t(2),text:'【北京市】快件在北京郵政速遞完成分揀，發往上海'},
+    {time:t(5),text:'【北京市】EMS 已攬收'}]};
+  if(/^YD|^ZT/i.test(no))return{state:2,stateLabel:'疑難件',list:[
+    {time:t(3),text:'【上海市】地址資訊不詳，暫存網點待處理'},
+    {time:t(9),text:'【上海市】快件到達上海轉運中心'}]};
+  return{state:0,stateLabel:'運輸中',list:[
+    {time:t(2),text:'【杭州市】快件離開杭州蕭山轉運中心，發往蘇州'},
+    {time:t(8),text:'【杭州市】'+(CARRIER_NAME[car]||'快遞')+' 已收取快件'}]};
+}
+function demoData(){
+  const mk=(no,car,o)=>{const m=mockStatus(no,car);return{id:'demo-'+no,trackNo:no,carrier:car,carrierName:CARRIER_NAME[car],
+    state:m.state,stateLabel:m.stateLabel,latest:m.list[0].text,timeline:m.list,lastUpdate:Date.now(),subscribed:true,...o};};
+  return[
+    mk('SF1234567890123','shunfeng',{items:'A4影印紙 5箱',supplier:'晨光文具',orderNo:'PO-20260706-001',purchaseTime:'2026-07-06'}),
+    mk('YT7654321098765','yuantong',{items:'USB-C 傳輸線 100條',supplier:'綠聯官方店',orderNo:'PO-20260707-004',purchaseTime:'2026-07-07'}),
+    mk('YD3312345678901','yunda',{items:'紙箱 60×40 200個',supplier:'包裝大王',orderNo:'PO-20260705-011',purchaseTime:'2026-07-05'}),
+    mk('EMS9988776655443','ems',{items:'公司印章 x3',supplier:'刻章師傅',orderNo:'PO-20260708-002',purchaseTime:'2026-07-08'}),
+  ];
+}
+
+/* ===== 後端狀態 ===== */
 async function loadConfig(){
-  try{
-    const r=await fetch(API_BASE+'/api/config');
-    if(!r.ok)throw 0;
-    const c=await r.json();
-    const line=v=>v?'<span style="color:var(--ok)">✓ 已設定</span>':'<span style="color:var(--err)">✗ 未設定</span>';
+  try{const r=await fetch(API_BASE+'/api/config');if(!r.ok)throw 0;const c=await r.json();
+    const y=v=>v?'<span style="color:var(--ok)">✓</span>':'<span style="color:var(--err)">✗</span>';
     document.getElementById('cfgStatus').innerHTML=
-      '快遞100金鑰：'+line(c.hasKd100)+'　·　LINE Token：'+line(c.hasLine)
-      +'　·　回呼網址：'+line(c.hasCallback)+'<br>目前訂閱單號數：'+c.subCount;
-  }catch(e){
-    document.getElementById('cfgStatus').innerHTML='未偵測到後端（可維持示範模式預覽畫面）。';
-  }
+      `快遞100 ${y(c.hasKd100)}　·　LINE Token ${y(c.hasLine)}　·　推送回呼 ${y(c.hasCallback)}　·　`
+      +`群組機器人(webhook) ${y(c.hasWebhook)}　·　群組ID ${y(c.hasGroup)}<br>目前追蹤訂單：${c.orderCount} 筆`;
+  }catch(e){document.getElementById('cfgStatus').innerHTML='未偵測到後端（維持示範模式即可預覽介面）。';}
 }
-function toggleSettings(){
-  const el=document.getElementById('settingsBody');el.classList.toggle('open');
-  document.getElementById('setToggle').textContent=el.classList.contains('open')?'收合':'展開';
-}
-function toggleDemo(){
-  DEMO=!DEMO;
-  document.getElementById('demoSwitch').classList.toggle('on',DEMO);
-  const badge=document.getElementById('modeBadge');
-  badge.className='badge '+(DEMO?'demo':'live');
-  badge.textContent=DEMO?'示範模式':'即時查詢';
-}
-
-/* ============ 自動識別快遞公司（依單號前綴） ============ */
-function autoDetect(no){
-  no=no.toUpperCase();
-  if(/^SF/.test(no))return 'shunfeng';
-  if(/^YT/.test(no))return 'yuantong';
-  if(/^(ZT|75|78)/.test(no))return 'zhongtong';
-  if(/^(ST|77|55|66)/.test(no))return 'shentong';
-  if(/^(YD|12|19|31|39|43)/.test(no))return 'yunda';
-  if(/^JD/.test(no))return 'jd';
-  if(/^(EMS|E[A-Z])/.test(no)||/^\d{13}$/.test(no))return 'ems';
-  if(/^(HT|A|B|K)/.test(no))return 'huitongkuaidi';
-  return 'shunfeng';
-}
-const CARRIER_NAME={shunfeng:'順豐速運',yuantong:'圓通速遞',zhongtong:'中通快遞',
-  shentong:'申通快遞',yunda:'韻達速遞',jd:'京東物流',ems:'EMS / 中國郵政',huitongkuaidi:'百世快遞'};
-
-/* ============ MD5（快遞100 簽名用，精簡實作） ============ */
-function md5(s){function rl(n,c){return(n<<c)|(n>>>(32-c))}function au(x,y){var l=(x&0xFFFF)+(y&0xFFFF),m=(x>>16)+(y>>16)+(l>>16);return(m<<16)|(l&0xFFFF)}
-function cmn(q,a,b,x,s,t){return au(rl(au(au(a,q),au(x,t)),s),b)}
-function ff(a,b,c,d,x,s,t){return cmn((b&c)|((~b)&d),a,b,x,s,t)}
-function gg(a,b,c,d,x,s,t){return cmn((b&d)|(c&(~d)),a,b,x,s,t)}
-function hh(a,b,c,d,x,s,t){return cmn(b^c^d,a,b,x,s,t)}
-function ii(a,b,c,d,x,s,t){return cmn(c^(b|(~d)),a,b,x,s,t)}
-function tb(str){var n=str.length,bl=[],i;for(i=0;i<(n-3);i+=4)bl[i>>2]=str.charCodeAt(i)|(str.charCodeAt(i+1)<<8)|(str.charCodeAt(i+2)<<16)|(str.charCodeAt(i+3)<<24);
-switch(n%4){case 0:bl[i>>2]=0x80;break;case 1:bl[i>>2]=str.charCodeAt(i)|0x8000;break;case 2:bl[i>>2]=str.charCodeAt(i)|(str.charCodeAt(i+1)<<8)|0x800000;break;case 3:bl[i>>2]=str.charCodeAt(i)|(str.charCodeAt(i+1)<<8)|(str.charCodeAt(i+2)<<16)|0x80000000;break;}
-bl[(((n+8)>>6)+1)*16-2]=n*8;return bl}
-function rh(n){var s='',j;for(j=0;j<=3;j++)s+=('0'+((n>>(j*8))&0xFF).toString(16)).slice(-2);return s}
-var x=tb(unescape(encodeURIComponent(s))),a=1732584193,b=-271733879,c=-1732584194,d=271733878,i;
-for(i=0;i<x.length;i+=16){var oa=a,ob=b,oc=c,od=d;
-a=ff(a,b,c,d,x[i],7,-680876936);d=ff(d,a,b,c,x[i+1],12,-389564586);c=ff(c,d,a,b,x[i+2],17,606105819);b=ff(b,c,d,a,x[i+3],22,-1044525330);
-a=ff(a,b,c,d,x[i+4],7,-176418897);d=ff(d,a,b,c,x[i+5],12,1200080426);c=ff(c,d,a,b,x[i+6],17,-1473231341);b=ff(b,c,d,a,x[i+7],22,-45705983);
-a=ff(a,b,c,d,x[i+8],7,1770035416);d=ff(d,a,b,c,x[i+9],12,-1958414417);c=ff(c,d,a,b,x[i+10],17,-42063);b=ff(b,c,d,a,x[i+11],22,-1990404162);
-a=ff(a,b,c,d,x[i+12],7,1804603682);d=ff(d,a,b,c,x[i+13],12,-40341101);c=ff(c,d,a,b,x[i+14],17,-1502002290);b=ff(b,c,d,a,x[i+15],22,1236535329);
-a=gg(a,b,c,d,x[i+1],5,-165796510);d=gg(d,a,b,c,x[i+6],9,-1069501632);c=gg(c,d,a,b,x[i+11],14,643717713);b=gg(b,c,d,a,x[i],20,-373897302);
-a=gg(a,b,c,d,x[i+5],5,-701558691);d=gg(d,a,b,c,x[i+10],9,38016083);c=gg(c,d,a,b,x[i+15],14,-660478335);b=gg(b,c,d,a,x[i+4],20,-405537848);
-a=gg(a,b,c,d,x[i+9],5,568446438);d=gg(d,a,b,c,x[i+14],9,-1019803690);c=gg(c,d,a,b,x[i+3],14,-187363961);b=gg(b,c,d,a,x[i+8],20,1163531501);
-a=gg(a,b,c,d,x[i+13],5,-1444681467);d=gg(d,a,b,c,x[i+2],9,-51403784);c=gg(c,d,a,b,x[i+7],14,1735328473);b=gg(b,c,d,a,x[i+12],20,-1926607734);
-a=hh(a,b,c,d,x[i+5],4,-378558);d=hh(d,a,b,c,x[i+8],11,-2022574463);c=hh(c,d,a,b,x[i+11],16,1839030562);b=hh(b,c,d,a,x[i+14],23,-35309556);
-a=hh(a,b,c,d,x[i+1],4,-1530992060);d=hh(d,a,b,c,x[i+4],11,1272893353);c=hh(c,d,a,b,x[i+7],16,-155497632);b=hh(b,c,d,a,x[i+10],23,-1094730640);
-a=hh(a,b,c,d,x[i+13],4,681279174);d=hh(d,a,b,c,x[i],11,-358537222);c=hh(c,d,a,b,x[i+3],16,-722521979);b=hh(b,c,d,a,x[i+6],23,76029189);
-a=hh(a,b,c,d,x[i+9],4,-640364487);d=hh(d,a,b,c,x[i+12],11,-421815835);c=hh(c,d,a,b,x[i+15],16,530742520);b=hh(b,c,d,a,x[i+2],23,-995338651);
-a=ii(a,b,c,d,x[i],6,-198630844);d=ii(d,a,b,c,x[i+7],10,1126891415);c=ii(c,d,a,b,x[i+14],15,-1416354905);b=ii(b,c,d,a,x[i+5],21,-57434055);
-a=ii(a,b,c,d,x[i+12],6,1700485571);d=ii(d,a,b,c,x[i+3],10,-1894986606);c=ii(c,d,a,b,x[i+10],15,-1051523);b=ii(b,c,d,a,x[i+1],21,-2054922799);
-a=ii(a,b,c,d,x[i+8],6,1873313359);d=ii(d,a,b,c,x[i+15],10,-30611744);c=ii(c,d,a,b,x[i+6],15,-1560198380);b=ii(b,c,d,a,x[i+13],21,1309151649);
-a=ii(a,b,c,d,x[i+4],6,-145523070);d=ii(d,a,b,c,x[i+11],10,-1120210379);c=ii(c,d,a,b,x[i+2],15,718787259);b=ii(b,c,d,a,x[i+9],21,-343485551);
-a=au(a,oa);b=au(b,ob);c=au(c,oc);d=au(d,od);}
-return(rh(a)+rh(b)+rh(c)+rh(d)).toUpperCase();}
-
-/* ============ 查詢主流程 ============ */
-async function doQuery(){
-  const no=document.getElementById('trackNo').value.trim();
-  if(!no){renderError('請輸入快遞單號');return;}
-  let car=document.getElementById('carrier').value;
-  if(car==='auto')car=autoDetect(no);
-  renderLoading();
-  document.getElementById('queryBtn').disabled=true;
-  try{
-    const data=DEMO? await mockQuery(no,car) : await liveQuery(no,car);
-    renderResult(data,car,no);
-  }catch(e){
-    renderError(e.message||'查詢失敗');
-  }finally{
-    document.getElementById('queryBtn').disabled=false;
-  }
-}
-
-/* --- 真實查詢：呼叫後端 /api/query（金鑰留後端） --- */
-async function liveQuery(no,car){
-  const res=await fetch(API_BASE+'/api/query',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({num:no,com:car})
-  });
-  const j=await res.json();
-  if(!res.ok||j.error)throw new Error(j.error||('HTTP '+res.status));
-  return {state:j.state,list:j.list};
-}
-/* --- 訂閱簽收 → LINE 通知 --- */
-async function subscribeLine(){
-  const no=document.getElementById('trackNo').value.trim();
-  let car=document.getElementById('carrier').value;
-  if(car==='auto')car=autoDetect(no);
-  if(!no){subMsg('請先輸入快遞單號','err');return;}
-  if(DEMO){subMsg('請先關閉示範模式並確認後端已啟動','err');return;}
-  const lineTo=document.getElementById('lineTo').value.trim();
-  subMsg('訂閱中…','');
-  try{
-    const res=await fetch(API_BASE+'/api/subscribe',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({num:no,com:car,lineTo})
-    });
-    const j=await res.json();
-    if(!res.ok||j.error)throw new Error(j.error);
-    subMsg('✓ '+(j.message||'已訂閱，簽收時會用 LINE 通知你'),'ok');
-  }catch(e){subMsg('訂閱失敗：'+e.message,'err');}
-}
-async function testLine(){
-  const lineTo=document.getElementById('lineTo').value.trim();
-  subMsg('發送測試訊息…','');
-  try{
-    const res=await fetch(API_BASE+'/api/line/test',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({lineTo})
-    });
-    const j=await res.json();
-    if(!res.ok||j.error)throw new Error(j.error);
-    subMsg('✓ 已送出 LINE 測試訊息，請查看你的 LINE','ok');
-  }catch(e){subMsg('測試失敗：'+e.message,'err');}
-}
-function subMsg(t,cls){
-  const el=document.getElementById('subMsg');
-  el.textContent=t;el.style.color=cls==='ok'?'var(--ok)':cls==='err'?'var(--err)':'var(--sub)';
-}
-
-/* --- 示範查詢：內建假資料 --- */
-function mockQuery(no,car){
-  return new Promise(res=>{
-    setTimeout(()=>{
-      const now=new Date();
-      const fmt=d=>d.toISOString().slice(0,16).replace('T',' ');
-      const t=h=>fmt(new Date(now.getTime()-h*3600*1000));
-      let list,state;
-      if(/^SF/i.test(no)){ // 已簽收
-        state='3';
-        list=[
-          {time:t(1),text:'【深圳市】您的快件已被【前台代簽收】簽收，感謝使用順豐，期待再次為您服務'},
-          {time:t(3),text:'【深圳市】順豐速運 已收取快件，正在派送途中，派件員：王師傅 189****2233'},
-          {time:t(6),text:'【深圳市】快件已到達【深圳福田集散中心】'},
-          {time:t(14),text:'【廣州市】快件已從【廣州轉運中心】發出，下一站【深圳福田集散中心】'},
-          {time:t(20),text:'【廣州市】順豐速運 已收取快件'},
-        ];
-      }else if(/^EMS/i.test(no)){ // 已攬收
-        state='1';
-        list=[
-          {time:t(2),text:'【北京市】快件已在【北京郵政速遞航空部】完成分揀，準備發往【上海】'},
-          {time:t(5),text:'【北京市】EMS 已攬收，郵路：北京→上海'},
-        ];
-      }else{ // 運輸中
-        state='0';
-        list=[
-          {time:t(2),text:'【杭州市】快件離開【杭州蕭山轉運中心】，已發往【蘇州】'},
-          {time:t(7),text:'【杭州市】快件已到達【杭州蕭山轉運中心】'},
-          {time:t(12),text:'【杭州市】'+CARRIER_NAME[car]+' 已收取快件'},
-        ];
-      }
-      res({state,list});
-    },600);
-  });
-}
-
-/* ============ 畫面渲染 ============ */
-function stateInfo(s){
-  const m={'0':['運輸中','s-transit'],'1':['已攬收','s-other'],'2':['疑難件','s-other'],
-    '3':['已簽收','s-3'],'4':['退簽','s-other'],'5':['派件中','s-transit'],'6':['退回','s-other']};
-  return m[String(s)]||['運輸中','s-transit'];
-}
-function renderLoading(){
-  document.getElementById('result').innerHTML='<div class="loading"><span class="spinner"></span><div style="margin-top:12px">查詢中…</div></div>';
-}
-function renderError(msg){
-  document.getElementById('result').innerHTML='<div class="error">⚠️ '+msg+'</div>';
-}
-function renderResult(data,car,no){
-  if(!data.list||!data.list.length){renderError('查無物流軌跡，請確認單號或快遞公司是否正確');return;}
-  const [label,cls]=stateInfo(data.state);
-  let html='<div class="status-bar">'
-    +'<span class="co">'+(CARRIER_NAME[car]||car)+'</span>'
-    +'<span class="no">'+no+'</span>'
-    +'<span class="state-pill '+cls+'">'+label+'</span></div>';
-  html+='<ul class="timeline">';
-  data.list.forEach((it,i)=>{
-    html+='<li class="'+(i===0?'first':'')+'"><span class="dot"></span>'
-      +'<div class="t-time">'+(it.time||'')+'</div>'
-      +'<div class="t-text">'+(it.text||'')+'</div></li>';
-  });
-  html+='</ul>';
-  document.getElementById('result').innerHTML=html;
-}
-function fillSample(no,car){
-  document.getElementById('trackNo').value=no;
-  document.getElementById('carrier').value=car;
-  doQuery();
-}
-document.getElementById('trackNo').addEventListener('keydown',e=>{if(e.key==='Enter')doQuery();});
 
 /* init */
-loadConfig();
+document.getElementById('fTrackNo').addEventListener('keydown',e=>{if(e.key==='Enter')addOrder();});
+loadOrders();loadConfig();
 </script>
 </body>
 </html>
