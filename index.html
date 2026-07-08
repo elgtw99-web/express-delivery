@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>快遞物流狀態查詢系統</title>
+<style>
+  :root{
+    --bg:#0f1220; --card:#181c2e; --card2:#1f2440; --line:#2a3050;
+    --txt:#e8ebf5; --sub:#9aa3c7; --pri:#5b8cff; --pri2:#3f6fe0;
+    --ok:#31c48d; --warn:#f6c454; --err:#f16b6b; --track:#2a3050;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+    background:linear-gradient(160deg,#0f1220,#141833 60%,#0f1220);color:var(--txt);min-height:100vh}
+  .wrap{max-width:860px;margin:0 auto;padding:28px 18px 60px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--pri),#7d5bff);
+    display:flex;align-items:center;justify-content:center;font-size:22px}
+  h1{font-size:22px;margin:0}
+  .tagline{color:var(--sub);font-size:13px;margin:2px 0 22px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px;
+    box-shadow:0 8px 30px rgba(0,0,0,.25)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  label{font-size:12px;color:var(--sub);display:block;margin:0 0 6px 2px}
+  input,select{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--line);
+    background:var(--card2);color:var(--txt);font-size:15px;outline:none}
+  input:focus,select:focus{border-color:var(--pri)}
+  .grow{flex:1;min-width:180px}
+  button{cursor:pointer;border:none;border-radius:10px;font-size:15px;font-weight:600;padding:12px 20px;
+    background:linear-gradient(135deg,var(--pri),var(--pri2));color:#fff;transition:.15s;white-space:nowrap}
+  button:hover{filter:brightness(1.08)}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--sub);font-weight:500;padding:8px 14px;font-size:13px}
+  .settings-head{display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+  .settings-head h3{margin:0;font-size:15px}
+  .settings-body{margin-top:14px;display:none}
+  .settings-body.open{display:block}
+  .hint{font-size:12px;color:var(--sub);line-height:1.6;margin-top:8px}
+  .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;margin-left:8px}
+  .badge.demo{background:rgba(246,196,84,.15);color:var(--warn);border:1px solid rgba(246,196,84,.35)}
+  .badge.live{background:rgba(49,196,141,.15);color:var(--ok);border:1px solid rgba(49,196,141,.35)}
+  .toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--sub);cursor:pointer;user-select:none}
+  .switch{width:40px;height:22px;border-radius:20px;background:var(--line);position:relative;transition:.2s}
+  .switch.on{background:var(--ok)}
+  .switch::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;
+    background:#fff;transition:.2s}
+  .switch.on::after{left:20px}
+  /* result */
+  #result{margin-top:4px}
+  .status-bar{display:flex;align-items:center;gap:12px;background:var(--card2);border:1px solid var(--line);
+    border-radius:12px;padding:14px 16px;margin-bottom:16px;flex-wrap:wrap}
+  .status-bar .co{font-weight:700;font-size:16px}
+  .status-bar .no{color:var(--sub);font-size:13px}
+  .state-pill{margin-left:auto;font-weight:700;font-size:14px;padding:6px 14px;border-radius:20px}
+  .s-3{background:rgba(49,196,141,.15);color:var(--ok)}   /* 已簽收 */
+  .s-transit{background:rgba(91,140,255,.15);color:var(--pri)} /* 運輸中 */
+  .s-other{background:rgba(246,196,84,.15);color:var(--warn)}
+  .timeline{list-style:none;margin:0;padding:6px 0 0}
+  .timeline li{position:relative;padding:0 0 24px 30px}
+  .timeline li::before{content:"";position:absolute;left:7px;top:20px;bottom:-4px;width:2px;background:var(--track)}
+  .timeline li:last-child::before{display:none}
+  .dot{position:absolute;left:0;top:4px;width:16px;height:16px;border-radius:50%;background:var(--track);
+    border:3px solid var(--card)}
+  .timeline li.first .dot{background:var(--ok);box-shadow:0 0 0 4px rgba(49,196,141,.18)}
+  .t-time{font-size:12px;color:var(--sub)}
+  .t-text{font-size:14.5px;margin-top:3px;line-height:1.5}
+  .timeline li.first .t-text{color:var(--txt);font-weight:600}
+  .empty,.loading,.error{text-align:center;padding:30px 10px;color:var(--sub)}
+  .error{color:var(--err)}
+  .spinner{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--pri);border-radius:50%;
+    display:inline-block;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .samples{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .chip{font-size:12px;padding:5px 12px;border-radius:20px;background:var(--card2);border:1px solid var(--line);
+    color:var(--sub);cursor:pointer}
+  .chip:hover{border-color:var(--pri);color:var(--txt)}
+  footer{text-align:center;color:var(--sub);font-size:12px;margin-top:24px;line-height:1.7}
+  code{background:var(--card2);padding:1px 6px;border-radius:5px;font-size:12px;color:var(--warn)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">📦</div>
+    <div>
+      <h1>快遞物流狀態查詢系統 <span id="modeBadge" class="badge demo">示範模式</span></h1>
+    </div>
+  </header>
+  <p class="tagline">支援順豐、圓通、中通、申通、韻達、EMS 等 · 聚合平台 API（快遞100）即時查詢</p>
+
+  <!-- 查詢卡 -->
+  <div class="card">
+    <div class="row">
+      <div class="grow" style="flex:2">
+        <label>快遞單號</label>
+        <input id="trackNo" placeholder="輸入快遞單號，例如 SF1234567890123" autocomplete="off">
+      </div>
+      <div class="grow">
+        <label>快遞公司</label>
+        <select id="carrier">
+          <option value="auto">自動識別</option>
+          <option value="shunfeng">順豐速運</option>
+          <option value="yuantong">圓通速遞</option>
+          <option value="zhongtong">中通快遞</option>
+          <option value="shentong">申通快遞</option>
+          <option value="yunda">韻達速遞</option>
+          <option value="jd">京東物流</option>
+          <option value="ems">EMS / 郵政</option>
+          <option value="huitongkuaidi">百世快遞</option>
+        </select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px;align-items:center">
+      <button id="queryBtn" onclick="doQuery()">查詢物流</button>
+      <div class="toggle" onclick="toggleDemo()" style="margin-left:6px">
+        <div id="demoSwitch" class="switch on"></div><span>示範模式</span>
+      </div>
+    </div>
+    <div class="samples">
+      <span style="font-size:12px;color:var(--sub)">試試看：</span>
+      <span class="chip" onclick="fillSample('SF1234567890123','shunfeng')">順豐（已簽收）</span>
+      <span class="chip" onclick="fillSample('YT7654321098765','yuantong')">圓通（運輸中）</span>
+      <span class="chip" onclick="fillSample('EMS9988776655443','ems')">EMS（已攬收）</span>
+    </div>
+  </div>
+
+  <!-- 結果卡 -->
+  <div class="card" id="resultCard">
+    <div id="result">
+      <div class="empty">輸入單號並按「查詢物流」即可查看即時物流狀態</div>
+    </div>
+  </div>
+
+  <!-- LINE 簽收通知 -->
+  <div class="card">
+    <h3 style="margin:0 0 12px;font-size:15px">🔔 簽收 LINE 通知</h3>
+    <div class="row" style="align-items:flex-end">
+      <div class="grow" style="flex:2">
+        <label>LINE 通知對象 ID（選填，留空用後端預設對象）</label>
+        <input id="lineTo" placeholder="你的 LINE userId，例 Uxxxxxxxx（或群組ID）">
+      </div>
+      <button onclick="subscribeLine()">訂閱此單號</button>
+      <button class="btn-ghost" onclick="testLine()" style="padding:12px 16px">測試 LINE</button>
+    </div>
+    <div id="subMsg" class="hint" style="min-height:18px"></div>
+    <p class="hint">
+      按「訂閱此單號」後，系統會把該單號交給快遞100監控；當狀態變為
+      <b>已簽收</b>時，後端會自動用 <b>LINE Messaging API</b> 推播通知你。<br>
+      （需先啟動後端並在 <code>.env</code> 設好快遞100與 LINE 金鑰，並關閉「示範模式」。）
+    </p>
+  </div>
+
+  <!-- 部署狀態 -->
+  <div class="card">
+    <div class="settings-head" onclick="toggleSettings()">
+      <h3>⚙️ 後端連線狀態</h3>
+      <span class="btn-ghost" id="setToggle">展開</span>
+    </div>
+    <div class="settings-body" id="settingsBody">
+      <div id="cfgStatus" class="hint">尚未連線後端。</div>
+      <p class="hint" style="margin-top:12px">
+        金鑰全部保存在後端 <code>.env</code>，前端不接觸任何密鑰。<br>
+        後端設定請見專案內 <code>.env.example</code> 與 <code>README.md</code>。
+      </p>
+    </div>
+  </div>
+
+  <footer>
+    快遞物流狀態查詢系統 · 單一 HTML 部署 · 各物流狀態第一時間查詢<br>
+    直接以瀏覽器開啟本檔，或上傳到任何靜態網站空間即可使用
+  </footer>
+</div>
+
+<script>
+/* ============ 設定 ============ */
+// 後端網址：同源部署留空即可；前端與後端不同網域時填後端網址
+const API_BASE='';
+let DEMO=true;
+
+async function loadConfig(){
+  try{
+    const r=await fetch(API_BASE+'/api/config');
+    if(!r.ok)throw 0;
+    const c=await r.json();
+    const line=v=>v?'<span style="color:var(--ok)">✓ 已設定</span>':'<span style="color:var(--err)">✗ 未設定</span>';
+    document.getElementById('cfgStatus').innerHTML=
+      '快遞100金鑰：'+line(c.hasKd100)+'　·　LINE Token：'+line(c.hasLine)
+      +'　·　回呼網址：'+line(c.hasCallback)+'<br>目前訂閱單號數：'+c.subCount;
+  }catch(e){
+    document.getElementById('cfgStatus').innerHTML='未偵測到後端（可維持示範模式預覽畫面）。';
+  }
+}
+function toggleSettings(){
+  const el=document.getElementById('settingsBody');el.classList.toggle('open');
+  document.getElementById('setToggle').textContent=el.classList.contains('open')?'收合':'展開';
+}
+function toggleDemo(){
+  DEMO=!DEMO;
+  document.getElementById('demoSwitch').classList.toggle('on',DEMO);
+  const badge=document.getElementById('modeBadge');
+  badge.className='badge '+(DEMO?'demo':'live');
+  badge.textContent=DEMO?'示範模式':'即時查詢';
+}
+
+/* ============ 自動識別快遞公司（依單號前綴） ============ */
+function autoDetect(no){
+  no=no.toUpperCase();
+  if(/^SF/.test(no))return 'shunfeng';
+  if(/^YT/.test(no))return 'yuantong';
+  if(/^(ZT|75|78)/.test(no))return 'zhongtong';
+  if(/^(ST|77|55|66)/.test(no))return 'shentong';
+  if(/^(YD|12|19|31|39|43)/.test(no))return 'yunda';
+  if(/^JD/.test(no))return 'jd';
+  if(/^(EMS|E[A-Z])/.test(no)||/^\d{13}$/.test(no))return 'ems';
+  if(/^(HT|A|B|K)/.test(no))return 'huitongkuaidi';
+  return 'shunfeng';
+}
+const CARRIER_NAME={shunfeng:'順豐速運',yuantong:'圓通速遞',zhongtong:'中通快遞',
+  shentong:'申通快遞',yunda:'韻達速遞',jd:'京東物流',ems:'EMS / 中國郵政',huitongkuaidi:'百世快遞'};
+
+/* ============ MD5（快遞100 簽名用，精簡實作） ============ */
+function md5(s){function rl(n,c){return(n<<c)|(n>>>(32-c))}function au(x,y){var l=(x&0xFFFF)+(y&0xFFFF),m=(x>>16)+(y>>16)+(l>>16);return(m<<16)|(l&0xFFFF)}
+function cmn(q,a,b,x,s,t){return au(rl(au(au(a,q),au(x,t)),s),b)}
+function ff(a,b,c,d,x,s,t){return cmn((b&c)|((~b)&d),a,b,x,s,t)}
+function gg(a,b,c,d,x,s,t){return cmn((b&d)|(c&(~d)),a,b,x,s,t)}
+function hh(a,b,c,d,x,s,t){return cmn(b^c^d,a,b,x,s,t)}
+function ii(a,b,c,d,x,s,t){return cmn(c^(b|(~d)),a,b,x,s,t)}
+function tb(str){var n=str.length,bl=[],i;for(i=0;i<(n-3);i+=4)bl[i>>2]=str.charCodeAt(i)|(str.charCodeAt(i+1)<<8)|(str.charCodeAt(i+2)<<16)|(str.charCodeAt(i+3)<<24);
+switch(n%4){case 0:bl[i>>2]=0x80;break;case 1:bl[i>>2]=str.charCodeAt(i)|0x8000;break;case 2:bl[i>>2]=str.charCodeAt(i)|(str.charCodeAt(i+1)<<8)|0x800000;break;case 3:bl[i>>2]=str.charCodeAt(i)|(str.charCodeAt(i+1)<<8)|(str.charCodeAt(i+2)<<16)|0x80000000;break;}
+bl[(((n+8)>>6)+1)*16-2]=n*8;return bl}
+function rh(n){var s='',j;for(j=0;j<=3;j++)s+=('0'+((n>>(j*8))&0xFF).toString(16)).slice(-2);return s}
+var x=tb(unescape(encodeURIComponent(s))),a=1732584193,b=-271733879,c=-1732584194,d=271733878,i;
+for(i=0;i<x.length;i+=16){var oa=a,ob=b,oc=c,od=d;
+a=ff(a,b,c,d,x[i],7,-680876936);d=ff(d,a,b,c,x[i+1],12,-389564586);c=ff(c,d,a,b,x[i+2],17,606105819);b=ff(b,c,d,a,x[i+3],22,-1044525330);
+a=ff(a,b,c,d,x[i+4],7,-176418897);d=ff(d,a,b,c,x[i+5],12,1200080426);c=ff(c,d,a,b,x[i+6],17,-1473231341);b=ff(b,c,d,a,x[i+7],22,-45705983);
+a=ff(a,b,c,d,x[i+8],7,1770035416);d=ff(d,a,b,c,x[i+9],12,-1958414417);c=ff(c,d,a,b,x[i+10],17,-42063);b=ff(b,c,d,a,x[i+11],22,-1990404162);
+a=ff(a,b,c,d,x[i+12],7,1804603682);d=ff(d,a,b,c,x[i+13],12,-40341101);c=ff(c,d,a,b,x[i+14],17,-1502002290);b=ff(b,c,d,a,x[i+15],22,1236535329);
+a=gg(a,b,c,d,x[i+1],5,-165796510);d=gg(d,a,b,c,x[i+6],9,-1069501632);c=gg(c,d,a,b,x[i+11],14,643717713);b=gg(b,c,d,a,x[i],20,-373897302);
+a=gg(a,b,c,d,x[i+5],5,-701558691);d=gg(d,a,b,c,x[i+10],9,38016083);c=gg(c,d,a,b,x[i+15],14,-660478335);b=gg(b,c,d,a,x[i+4],20,-405537848);
+a=gg(a,b,c,d,x[i+9],5,568446438);d=gg(d,a,b,c,x[i+14],9,-1019803690);c=gg(c,d,a,b,x[i+3],14,-187363961);b=gg(b,c,d,a,x[i+8],20,1163531501);
+a=gg(a,b,c,d,x[i+13],5,-1444681467);d=gg(d,a,b,c,x[i+2],9,-51403784);c=gg(c,d,a,b,x[i+7],14,1735328473);b=gg(b,c,d,a,x[i+12],20,-1926607734);
+a=hh(a,b,c,d,x[i+5],4,-378558);d=hh(d,a,b,c,x[i+8],11,-2022574463);c=hh(c,d,a,b,x[i+11],16,1839030562);b=hh(b,c,d,a,x[i+14],23,-35309556);
+a=hh(a,b,c,d,x[i+1],4,-1530992060);d=hh(d,a,b,c,x[i+4],11,1272893353);c=hh(c,d,a,b,x[i+7],16,-155497632);b=hh(b,c,d,a,x[i+10],23,-1094730640);
+a=hh(a,b,c,d,x[i+13],4,681279174);d=hh(d,a,b,c,x[i],11,-358537222);c=hh(c,d,a,b,x[i+3],16,-722521979);b=hh(b,c,d,a,x[i+6],23,76029189);
+a=hh(a,b,c,d,x[i+9],4,-640364487);d=hh(d,a,b,c,x[i+12],11,-421815835);c=hh(c,d,a,b,x[i+15],16,530742520);b=hh(b,c,d,a,x[i+2],23,-995338651);
+a=ii(a,b,c,d,x[i],6,-198630844);d=ii(d,a,b,c,x[i+7],10,1126891415);c=ii(c,d,a,b,x[i+14],15,-1416354905);b=ii(b,c,d,a,x[i+5],21,-57434055);
+a=ii(a,b,c,d,x[i+12],6,1700485571);d=ii(d,a,b,c,x[i+3],10,-1894986606);c=ii(c,d,a,b,x[i+10],15,-1051523);b=ii(b,c,d,a,x[i+1],21,-2054922799);
+a=ii(a,b,c,d,x[i+8],6,1873313359);d=ii(d,a,b,c,x[i+15],10,-30611744);c=ii(c,d,a,b,x[i+6],15,-1560198380);b=ii(b,c,d,a,x[i+13],21,1309151649);
+a=ii(a,b,c,d,x[i+4],6,-145523070);d=ii(d,a,b,c,x[i+11],10,-1120210379);c=ii(c,d,a,b,x[i+2],15,718787259);b=ii(b,c,d,a,x[i+9],21,-343485551);
+a=au(a,oa);b=au(b,ob);c=au(c,oc);d=au(d,od);}
+return(rh(a)+rh(b)+rh(c)+rh(d)).toUpperCase();}
+
+/* ============ 查詢主流程 ============ */
+async function doQuery(){
+  const no=document.getElementById('trackNo').value.trim();
+  if(!no){renderError('請輸入快遞單號');return;}
+  let car=document.getElementById('carrier').value;
+  if(car==='auto')car=autoDetect(no);
+  renderLoading();
+  document.getElementById('queryBtn').disabled=true;
+  try{
+    const data=DEMO? await mockQuery(no,car) : await liveQuery(no,car);
+    renderResult(data,car,no);
+  }catch(e){
+    renderError(e.message||'查詢失敗');
+  }finally{
+    document.getElementById('queryBtn').disabled=false;
+  }
+}
+
+/* --- 真實查詢：呼叫後端 /api/query（金鑰留後端） --- */
+async function liveQuery(no,car){
+  const res=await fetch(API_BASE+'/api/query',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({num:no,com:car})
+  });
+  const j=await res.json();
+  if(!res.ok||j.error)throw new Error(j.error||('HTTP '+res.status));
+  return {state:j.state,list:j.list};
+}
+/* --- 訂閱簽收 → LINE 通知 --- */
+async function subscribeLine(){
+  const no=document.getElementById('trackNo').value.trim();
+  let car=document.getElementById('carrier').value;
+  if(car==='auto')car=autoDetect(no);
+  if(!no){subMsg('請先輸入快遞單號','err');return;}
+  if(DEMO){subMsg('請先關閉示範模式並確認後端已啟動','err');return;}
+  const lineTo=document.getElementById('lineTo').value.trim();
+  subMsg('訂閱中…','');
+  try{
+    const res=await fetch(API_BASE+'/api/subscribe',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({num:no,com:car,lineTo})
+    });
+    const j=await res.json();
+    if(!res.ok||j.error)throw new Error(j.error);
+    subMsg('✓ '+(j.message||'已訂閱，簽收時會用 LINE 通知你'),'ok');
+  }catch(e){subMsg('訂閱失敗：'+e.message,'err');}
+}
+async function testLine(){
+  const lineTo=document.getElementById('lineTo').value.trim();
+  subMsg('發送測試訊息…','');
+  try{
+    const res=await fetch(API_BASE+'/api/line/test',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({lineTo})
+    });
+    const j=await res.json();
+    if(!res.ok||j.error)throw new Error(j.error);
+    subMsg('✓ 已送出 LINE 測試訊息，請查看你的 LINE','ok');
+  }catch(e){subMsg('測試失敗：'+e.message,'err');}
+}
+function subMsg(t,cls){
+  const el=document.getElementById('subMsg');
+  el.textContent=t;el.style.color=cls==='ok'?'var(--ok)':cls==='err'?'var(--err)':'var(--sub)';
+}
+
+/* --- 示範查詢：內建假資料 --- */
+function mockQuery(no,car){
+  return new Promise(res=>{
+    setTimeout(()=>{
+      const now=new Date();
+      const fmt=d=>d.toISOString().slice(0,16).replace('T',' ');
+      const t=h=>fmt(new Date(now.getTime()-h*3600*1000));
+      let list,state;
+      if(/^SF/i.test(no)){ // 已簽收
+        state='3';
+        list=[
+          {time:t(1),text:'【深圳市】您的快件已被【前台代簽收】簽收，感謝使用順豐，期待再次為您服務'},
+          {time:t(3),text:'【深圳市】順豐速運 已收取快件，正在派送途中，派件員：王師傅 189****2233'},
+          {time:t(6),text:'【深圳市】快件已到達【深圳福田集散中心】'},
+          {time:t(14),text:'【廣州市】快件已從【廣州轉運中心】發出，下一站【深圳福田集散中心】'},
+          {time:t(20),text:'【廣州市】順豐速運 已收取快件'},
+        ];
+      }else if(/^EMS/i.test(no)){ // 已攬收
+        state='1';
+        list=[
+          {time:t(2),text:'【北京市】快件已在【北京郵政速遞航空部】完成分揀，準備發往【上海】'},
+          {time:t(5),text:'【北京市】EMS 已攬收，郵路：北京→上海'},
+        ];
+      }else{ // 運輸中
+        state='0';
+        list=[
+          {time:t(2),text:'【杭州市】快件離開【杭州蕭山轉運中心】，已發往【蘇州】'},
+          {time:t(7),text:'【杭州市】快件已到達【杭州蕭山轉運中心】'},
+          {time:t(12),text:'【杭州市】'+CARRIER_NAME[car]+' 已收取快件'},
+        ];
+      }
+      res({state,list});
+    },600);
+  });
+}
+
+/* ============ 畫面渲染 ============ */
+function stateInfo(s){
+  const m={'0':['運輸中','s-transit'],'1':['已攬收','s-other'],'2':['疑難件','s-other'],
+    '3':['已簽收','s-3'],'4':['退簽','s-other'],'5':['派件中','s-transit'],'6':['退回','s-other']};
+  return m[String(s)]||['運輸中','s-transit'];
+}
+function renderLoading(){
+  document.getElementById('result').innerHTML='<div class="loading"><span class="spinner"></span><div style="margin-top:12px">查詢中…</div></div>';
+}
+function renderError(msg){
+  document.getElementById('result').innerHTML='<div class="error">⚠️ '+msg+'</div>';
+}
+function renderResult(data,car,no){
+  if(!data.list||!data.list.length){renderError('查無物流軌跡，請確認單號或快遞公司是否正確');return;}
+  const [label,cls]=stateInfo(data.state);
+  let html='<div class="status-bar">'
+    +'<span class="co">'+(CARRIER_NAME[car]||car)+'</span>'
+    +'<span class="no">'+no+'</span>'
+    +'<span class="state-pill '+cls+'">'+label+'</span></div>';
+  html+='<ul class="timeline">';
+  data.list.forEach((it,i)=>{
+    html+='<li class="'+(i===0?'first':'')+'"><span class="dot"></span>'
+      +'<div class="t-time">'+(it.time||'')+'</div>'
+      +'<div class="t-text">'+(it.text||'')+'</div></li>';
+  });
+  html+='</ul>';
+  document.getElementById('result').innerHTML=html;
+}
+function fillSample(no,car){
+  document.getElementById('trackNo').value=no;
+  document.getElementById('carrier').value=car;
+  doQuery();
+}
+document.getElementById('trackNo').addEventListener('keydown',e=>{if(e.key==='Enter')doQuery();});
+
+/* init */
+loadConfig();
+</script>
+</body>
+</html>
