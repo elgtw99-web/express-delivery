@@ -23,14 +23,15 @@ app.use(express.json({ limit: '2mb', verify: (req, _res, buf) => { req.rawBody =
 app.use(express.static(__dirname));
 
 // ---- 設定 ----
-const KD_CUSTOMER = process.env.KD100_CUSTOMER || '';
-const KD_KEY      = process.env.KD100_KEY || '';
-const KD_SECRET   = process.env.KD100_SECRET || KD_KEY;      // 訂閱授權key
-const CALLBACK_URL= process.env.CALLBACK_URL || '';          // 對外 https + /api/kd100/callback
-const SALT        = process.env.KD100_SALT || 'kd100salt';
-const LINE_TOKEN  = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
-const LINE_SECRET = process.env.LINE_CHANNEL_SECRET || '';   // webhook 驗簽用
-const DEFAULT_LINE_TO = process.env.LINE_DEFAULT_TO || '';   // 群組ID 或 使用者ID
+// .trim() 防止貼上時多帶空白/換行導致簽名錯誤
+const KD_CUSTOMER = (process.env.KD100_CUSTOMER || '').trim();
+const KD_KEY      = (process.env.KD100_KEY || '').trim();
+const KD_SECRET   = (process.env.KD100_SECRET || process.env.KD100_KEY || '').trim();  // 訂閱授權key
+const CALLBACK_URL= (process.env.CALLBACK_URL || '').trim();          // 對外 https + /api/kd100/callback
+const SALT        = (process.env.KD100_SALT || 'kd100salt').trim();
+const LINE_TOKEN  = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim();
+const LINE_SECRET = (process.env.LINE_CHANNEL_SECRET || '').trim();   // webhook 驗簽用
+const DEFAULT_LINE_TO = (process.env.LINE_DEFAULT_TO || '').trim();   // 群組ID 或 使用者ID
 const PORT        = process.env.PORT || 3000;
 
 const md5upper = s => crypto.createHash('md5').update(s, 'utf8').digest('hex').toUpperCase();
@@ -75,7 +76,10 @@ async function kd100Query(num, com){
   const r = await fetch('https://poll.kuaidi100.com/poll/query.do', {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
   const j = await r.json();
-  if (j.returnCode && j.returnCode !== '200') throw new Error(j.message || '查詢失敗');
+  if (j.returnCode && j.returnCode !== '200') {
+    console.error('快遞100查詢失敗 raw=', JSON.stringify(j), 'com=', com);
+    throw new Error((j.message || '查詢失敗') + '（returnCode ' + j.returnCode + '，com=' + com + '）');
+  }
   return {
     state: Number(j.state),
     stateLabel: STATE_LABEL[Number(j.state)] || '運輸中',
@@ -298,6 +302,19 @@ app.get('/api/config', (req, res) => {
     hasGroup: !!DEFAULT_LINE_TO,
     orderCount: Object.keys(ORDERS).length,
     subCount: Object.keys(SUBS).length
+  });
+});
+
+// 安全診斷：只回長度與是否含空白，不外洩實際金鑰
+app.get('/api/diag', (req, res) => {
+  const rawC = process.env.KD100_CUSTOMER || '';
+  const rawK = process.env.KD100_KEY || '';
+  const rawS = process.env.KD100_SECRET || '';
+  res.json({
+    customerLen: rawC.length, customerHadWhitespace: rawC !== rawC.trim(), customerHasInnerSpace: /\s/.test(rawC.trim()),
+    keyLen: rawK.length, keyHadWhitespace: rawK !== rawK.trim(), keyHasInnerSpace: /\s/.test(rawK.trim()),
+    secretLen: rawS.length,
+    callbackUrl: CALLBACK_URL
   });
 });
 
