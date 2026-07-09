@@ -43,10 +43,47 @@ let SUBS = {};
 try { SUBS = JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8')); } catch (e) { SUBS = {}; }
 const saveSubs = () => fs.writeFileSync(SUBS_FILE, JSON.stringify(SUBS, null, 2));
 
-const ORDERS_FILE = path.join(__dirname, 'orders.json');
-let ORDERS = {};
-try { ORDERS = JSON.parse(fs.readFileSync(ORDERS_FILE, 'utf8')); } catch (e) { ORDERS = {}; }
-const saveOrders = () => fs.writeFileSync(ORDERS_FILE, JSON.stringify(ORDERS, null, 2));
+// ---- Firestore（訂單持久化 + 多人同步）----
+const admin = require('firebase-admin');
+let db = null;
+try {
+  const saRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (saRaw) {
+    const sa = JSON.parse(saRaw);
+    if (sa.private_key) sa.private_key = sa.private_key.replace(/\\n/g, '\n'); // 兼容被轉義的換行
+    admin.initializeApp({ credential: admin.cert(sa) });
+    db = admin.firestore();
+    console.log('✅ Firestore 已連線');
+  } else {
+    console.warn('⚠️ 未設定 FIREBASE_SERVICE_ACCOUNT，暫用記憶體儲存（重啟會遺失）');
+  }
+} catch (e) { console.error('Firebase 初始化失敗：', e.message); }
+
+const memOrders = {};   // 未接資料庫時的後備
+async function ordersAll() {
+  if (db) { const s = await db.collection('orders').get(); return s.docs.map(d => d.data()); }
+  return Object.values(memOrders);
+}
+async function orderGet(id) {
+  if (db) { const d = await db.collection('orders').doc(id).get(); return d.exists ? d.data() : null; }
+  return memOrders[id] || null;
+}
+async function orderSet(o) {
+  o.lastUpdate = Date.now();
+  if (db) await db.collection('orders').doc(o.id).set(o, { merge: true });
+  else memOrders[o.id] = o;
+}
+async function orderDelete(id) {
+  if (db) await db.collection('orders').doc(id).delete();
+  else delete memOrders[id];
+}
+async function orderFindByTrack(num) {
+  if (db) { const s = await db.collection('orders').where('trackNo', '==', num).limit(1).get(); return s.empty ? null : s.docs[0].data(); }
+  return Object.values(memOrders).find(o => o.trackNo === num) || null;
+}
+
+// 記錄最近一次 LINE 事件來源（方便取得群組ID）
+let LAST_SOURCE = null;
 
 const CARRIER_NAME = {
   shunfeng:'順豐速運', yuantong:'圓通速遞', zhongtong:'中通快遞', shentong:'申通快遞',
@@ -115,8 +152,12 @@ app.post('/api/query', async (req, res) => {
 });
 
 // ============ 2. 採購訂單儀表盤 CRUD ============
-app.get('/api/orders', (req, res) => {
-  res.json(Object.values(ORDERS).sort((a, b) => b.createdAt - a.createdAt));
+app.get('/api/orders', async (req, res) => {
+  try {
+    const list = await ordersAll();
+    list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    res.json(list);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/orders', async (req, res) => {
@@ -139,26 +180,26 @@ app.post('/api/orders', async (req, res) => {
       order.state = q.state; order.stateLabel = q.stateLabel;
       order.latest = q.list[0]?.text || ''; order.timeline = q.list; order.lastUpdate = Date.now();
     } catch (e) { /* 查不到先留待更新 */ }
-    ORDERS[id] = order; saveOrders();
+    await orderSet(order);
     res.json({ ok: true, order, warn });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/orders/:id/refresh', async (req, res) => {
   try {
-    const o = ORDERS[req.params.id];
+    const o = await orderGet(req.params.id);
     if (!o) return res.status(404).json({ error: '找不到訂單' });
     const q = await kd100Query(o.trackNo, o.carrier, o.phone);
     o.state = q.state; o.stateLabel = q.stateLabel;
     o.latest = q.list[0]?.text || ''; o.timeline = q.list; o.lastUpdate = Date.now();
-    saveOrders();
+    await orderSet(o);
     res.json({ ok: true, order: o });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/orders/:id', (req, res) => {
-  if (ORDERS[req.params.id]) { delete ORDERS[req.params.id]; saveOrders(); }
-  res.json({ ok: true });
+app.delete('/api/orders/:id', async (req, res) => {
+  try { await orderDelete(req.params.id); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ============ 3. 單號訂閱（相容舊用法）============
@@ -189,7 +230,7 @@ app.post('/api/kd100/callback', async (req, res) => {
     const latest = list[0]?.text || '';
 
     // (1) 更新儀表盤訂單，並在「有新狀態」時推到群組
-    const order = Object.values(ORDERS).find(o => o.trackNo === num);
+    const order = await orderFindByTrack(num);
     if (order) {
       const isNew = latest && latest !== order.latest;
       order.state = state; order.stateLabel = STATE_LABEL[state] || '運輸中';
@@ -202,7 +243,7 @@ app.post('/api/kd100/callback', async (req, res) => {
         await pushLine(order.lineTo, msg);
         if (signed) order.notified = true;
       }
-      saveOrders();
+      await orderSet(order);
     }
 
     // (2) 相容舊的單號訂閱
@@ -242,10 +283,10 @@ async function replyLine(replyToken, text){
 }
 
 // 依關鍵字找訂單（訂單編號 / 快遞號 / 品項 / 供應商）
-function findOrderByKeyword(kw){
+async function findOrderByKeyword(kw){
   const q = kw.replace(/^(查詢?|物流|狀態|進度|status)\s*/i, '').trim();
   if (!q) return null;
-  const all = Object.values(ORDERS);
+  const all = await ordersAll();
   return all.find(o => o.orderNo === q || o.trackNo === q)
       || all.find(o => (o.orderNo && o.orderNo.includes(q)) || (o.trackNo && o.trackNo.includes(q)))
       || all.find(o => (o.items && o.items.includes(q)) || (o.supplier && o.supplier.includes(q)))
@@ -269,10 +310,11 @@ app.post('/api/line/webhook', async (req, res) => {
     res.status(200).end();  // 先回 200，避免 LINE 逾時重送
     const events = req.body.events || [];
     for (const ev of events) {
+      if (ev.source) LAST_SOURCE = { type: ev.source.type, groupId: ev.source.groupId || '', roomId: ev.source.roomId || '', userId: ev.source.userId || '', at: new Date().toISOString() };
       if (ev.type !== 'message' || ev.message?.type !== 'text') continue;
       const text = ev.message.text.trim();
       let reply;
-      const order = findOrderByKeyword(text);
+      const order = await findOrderByKeyword(text);
       if (order) {
         let q = null;
         try { q = await kd100Query(order.trackNo, order.carrier, order.phone); } catch (e) {}
@@ -290,6 +332,11 @@ app.post('/api/line/webhook', async (req, res) => {
   } catch (e) { console.error('webhook 錯誤', e); }
 });
 
+// 取得最近一次 LINE 事件來源（把機器人加入群組、群組發一則訊息後打開此網址即可看到 groupId）
+app.get('/api/line/lastsource', (req, res) => {
+  res.json(LAST_SOURCE || { note: '尚未收到任何 LINE 事件。請先設定 Webhook、把機器人加入群組，並在群組發一則訊息，再重新整理此頁。' });
+});
+
 // 測試 LINE 是否可通
 app.post('/api/line/test', async (req, res) => {
   try { await pushLine(req.body.lineTo, '✅ LINE 通知測試成功：採購貨物追蹤儀表盤已就緒'); res.json({ ok: true }); }
@@ -301,7 +348,7 @@ const OCR_PROMPT = `你是物流截圖資訊擷取助手。從這張快遞/訂�
 {"orderNo":"訂單編號","trackNo":"快遞單號","phone4":"收件人或寄件人手機號的後四碼","carrier":"快遞公司代碼"}
 規則：
 - carrier 只能是：shunfeng(順豐) / yuantong(圓通) / zhongtong(中通) / shentong(申通) / yunda(韻達) / jd(京東) / ems(郵政EMS) / huitongkuaidi(百世)，判斷不出留空。
-- phone4 取「收件人或寄件人」手機號的最後四位數字；務必忽略快遞員、客服、網點電話。若手機號被遮蔽或看不到，留空字串。
+- phone4：只取「收件人 / 寄件人」手機號的後四碼（通常在「收貨地址」「收件人」姓名旁）。務必跳過物流明細裡「快遞員【姓名：號碼】」的電話、以及客服/網點電話（如 020-…）。若看不到收件人手機，留空字串。
 - 找不到的欄位一律回空字串 ""。`;
 
 app.post('/api/ocr', async (req, res) => {
@@ -334,15 +381,18 @@ app.post('/api/ocr', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/config', (req, res) => {
+app.get('/api/config', async (req, res) => {
+  let orderCount = 0;
+  try { orderCount = (await ordersAll()).length; } catch (e) {}
   res.json({
     hasKd100: !!(KD_CUSTOMER && KD_KEY),
     hasOcr: !!OPENAI_API_KEY,
+    hasDb: !!db,
     hasLine: !!LINE_TOKEN,
     hasCallback: !!CALLBACK_URL,
     hasWebhook: !!LINE_SECRET,
     hasGroup: !!DEFAULT_LINE_TO,
-    orderCount: Object.keys(ORDERS).length,
+    orderCount,
     subCount: Object.keys(SUBS).length
   });
 });
