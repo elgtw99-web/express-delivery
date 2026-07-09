@@ -210,7 +210,7 @@ async function addOrder(){
       addMsg('✓ 已加入（示範）','ok');
     }else{
       const r=await fetch(API_BASE+'/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});
-      const j=await r.json();if(!r.ok||j.error)throw new Error(j.error);
+      const j=await jsonOrThrow(r);
       addMsg('✓ 已加入追蹤'+(j.warn?'（'+j.warn+'）':''),j.warn?'err':'ok');
       await loadOrders();
     }
@@ -222,7 +222,7 @@ async function addOrder(){
 async function refreshOrder(id){
   const o=ORDERS.find(x=>x.id===id);if(!o)return;
   if(DEMO){const mk=mockStatus(o.trackNo,o.carrier);Object.assign(o,{state:mk.state,stateLabel:mk.stateLabel,latest:mk.list[0]?.text||'',timeline:mk.list,lastUpdate:Date.now()});render();return;}
-  try{const r=await fetch(API_BASE+'/api/orders/'+id+'/refresh',{method:'POST'});const j=await r.json();
+  try{const r=await fetch(API_BASE+'/api/orders/'+id+'/refresh',{method:'POST'});const j=await jsonOrThrow(r);
     if(j.order)Object.assign(o,j.order);render();}catch(e){alert('更新失敗：'+e.message);}
 }
 async function refreshAll(){for(const o of ORDERS){await refreshOrder(o.id);}}
@@ -277,6 +277,16 @@ function toggleDemo(){DEMO=!DEMO;document.getElementById('demoSwitch').classList
 function toggleSettings(){const e=document.getElementById('settingsBody');e.classList.toggle('open');
   document.getElementById('setToggle').textContent=e.classList.contains('open')?'收合':'展開';}
 
+// 後端回傳可能是 HTML(404/未啟動) → 給清楚訊息而非 JSON 解析錯誤
+async function jsonOrThrow(res){
+  const ct=res.headers.get('content-type')||'';
+  if(!ct.includes('application/json')){
+    throw new Error('偵測不到後端 API。請先啟動 server.js 並從 http://localhost:3000 開啟，或開回「示範模式」預覽。');
+  }
+  const j=await res.json();
+  if(!res.ok||j.error)throw new Error(j.error||('HTTP '+res.status));
+  return j;
+}
 const v=id=>document.getElementById(id).value;
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function addMsg(t,cls){const el=document.getElementById('addMsg');el.textContent=t;

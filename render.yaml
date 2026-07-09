@@ -1,0 +1,28 @@
+# Render 一鍵部署藍圖（連 GitHub repo 後自動生效）
+# 部署後會得到固定網址 https://<服務名>.onrender.com
+# 記得在 Render 後台 Environment 填入下方標記 sync:false 的密鑰
+services:
+  - type: web
+    name: kuaidi-logistics-tracker
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/config
+    envVars:
+      - key: KD100_CUSTOMER
+        sync: false
+      - key: KD100_KEY
+        sync: false
+      - key: KD100_SECRET
+        sync: false
+      - key: KD100_SALT
+        generateValue: true
+      - key: CALLBACK_URL
+        sync: false          # 部署後填 https://<你的服務>.onrender.com/api/kd100/callback
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: LINE_DEFAULT_TO
+        sync: false          # 查貨物流群組ID Cxxxx

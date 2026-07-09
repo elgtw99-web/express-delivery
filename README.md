@@ -1,18 +1,20 @@
-# 快遞物流狀態查詢系統
+# 採購貨物追蹤儀表盤
 
-快遞100 即時查詢 + 簽收自動 LINE 通知。前端單頁 `index.html`，後端單檔 `server.js`。
+快遞100 即時物流 + LINE 群組機器人。前端單頁 `index.html`，後端單檔 `server.js`。
 
 ## 功能
-- 輸入**快遞單號 + 快遞公司**（可自動識別），即時查詢物流軌跡。
-- 訂閱單號後交給快遞100監控，狀態變為**已簽收**時，自動用 **LINE Messaging API** 推播通知。
+- **採購訂單儀表盤**：登錄每筆採購的「品項 / 供應商 / 購買時間 / 訂單編號 / 快遞公司 / 快遞號碼」，一覽所有貨物目前物流狀態，含統計（總數 / 運輸中 / 已簽收 / 異常）、篩選、搜尋、逐筆物流軌跡。
+- **新增即自動訂閱**：加入訂單後自動交給快遞100監控，並立即抓一次目前狀態。
+- **群組自動推播**：物流狀態一有更新，後端自動把「品項 / 供應商 / 單號 / 最新狀態」推到 LINE 群組（簽收會特別標示）。
+- **群組關鍵字查詢**：在 LINE 群組輸入「訂單編號 / 快遞單號 / 品項 / 供應商」，機器人即回覆該貨物目前狀態。
 - 金鑰全部保存在後端 `.env`，前端不接觸密鑰。
-- 示範模式：不需後端也能打開 `index.html` 預覽畫面與假資料。
+- 示範模式：不需後端也能打開 `index.html` 預覽儀表盤與假資料。
 
 ## 你需要準備
 1. **快遞100 企業版**：後台的 `customer`、`key`（及訂閱授權 key）。
-2. **LINE Messaging API**：到 [LINE Developers](https://developers.line.biz/) 建立 Provider → Messaging API channel，取得 **Channel access token**；用 webhook 或加好友事件取得你的 **userId**（Uxxxx）。
+2. **LINE Messaging API**：到 [LINE Developers](https://developers.line.biz/) 建立 Provider → Messaging API channel，取得 **Channel access token** 與 **Channel secret**。把這個官方帳號（機器人）拉進你的「查貨物流」群組，取得**群組ID（Cxxxx）**當推播對象。
    > ⚠️ LINE Notify 已於 2025/3/31 停用，本系統改用官方推薦的 Messaging API。
-3. **一個公網網址**（給快遞100推送回呼用），需 HTTPS，例如自有網域、雲主機，或本機用 ngrok 對外。
+3. **一個公網網址**（給快遞100推送回呼、以及 LINE webhook 用），需 HTTPS，例如自有網域、雲主機，或本機用 ngrok 對外。
 
 ## 安裝與啟動
 ```bash
@@ -30,10 +32,15 @@ npm start
 ```
 
 ## 使用
-1. 打開網頁，關閉右上「示範模式」。
-2. 輸入單號、選快遞公司 → 按「查詢物流」看即時狀態。
-3. 在「簽收 LINE 通知」區按「測試 LINE」確認能收到訊息。
-4. 按「訂閱此單號」；簽收時系統會自動 LINE 通知你。
+**儀表盤（網頁）**
+1. 打開網頁，關閉右上「示範模式」切到即時模式。
+2. 在「新增採購訂單」填入品項 / 供應商 / 購買時間 / 訂單編號 / 快遞公司 / 快遞號碼 → 按「加入追蹤」。
+3. 加入後自動訂閱並抓一次狀態；清單可篩選（運輸中 / 已簽收 / 異常）、搜尋、逐筆看物流軌跡、單筆或全部更新。
+
+**LINE 群組機器人**
+1. 到 LINE Developers 的 channel → Messaging API → **Webhook URL** 填 `https://你的網域/api/line/webhook`，開啟 **Use webhook**。
+2. 之後每筆訂單狀態一有更新，機器人自動把「品項 / 供應商 / 單號 / 最新狀態」推到群組（簽收特別標示）。
+3. 在群組直接輸入 `訂單編號`、`快遞單號`、`品項` 或 `供應商`（可加「查」字），機器人回覆該貨物目前狀態。
 
 ## 部署（GitHub → Render，推薦）
 本專案已附 `render.yaml`，用 GitHub 一鍵部署最省事：
@@ -68,8 +75,9 @@ npm start              # http://localhost:3000
 ## 檔案
 | 檔案 | 說明 |
 |---|---|
-| `index.html` | 前端查詢介面（單檔） |
-| `server.js` | 後端：查詢代理 / 訂閱 / 快遞100回呼 / LINE 推播 |
+| `index.html` | 前端採購追蹤儀表盤（單檔） |
+| `server.js` | 後端：查詢 / 訂單CRUD / 快遞100回呼 / LINE 群組推播與 webhook |
+| `orders.json` | 自動產生，儲存採購訂單與狀態 |
 | `.env.example` | 環境變數範本 |
 | `package.json` | 相依套件 |
 | `render.yaml` | Render 一鍵部署藍圖 |

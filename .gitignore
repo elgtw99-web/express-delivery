@@ -1,0 +1,15 @@
+# 相依套件
+node_modules/
+
+# 金鑰與環境變數（切勿上傳！）
+.env
+.env.local
+
+# 執行期產生的訂閱/訂單資料
+subscriptions.json
+orders.json
+
+# 系統/編輯器
+.DS_Store
+*.log
+server.log
