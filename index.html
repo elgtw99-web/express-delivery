@@ -93,10 +93,7 @@
 <div class="wrap">
   <header>
     <div class="logo">📊</div>
-    <div><h1>採購貨物追蹤儀表盤 <span id="modeBadge" class="badge demo">示範模式</span></h1></div>
-    <div class="toggle" style="margin-left:auto" onclick="toggleDemo()">
-      <div id="demoSwitch" class="switch on"></div><span>示範模式</span>
-    </div>
+    <div><h1>採購貨物追蹤儀表盤</h1></div>
   </header>
   <p class="tagline">品項 · 供應商 · 購買時間 · 訂單編號 · 快遞號碼 一站追蹤，狀態更新自動推 LINE 群組，群組打關鍵字可主動查詢</p>
 
@@ -178,7 +175,6 @@
 
 <script>
 const API_BASE='';        // 同源部署留空
-let DEMO=true;
 let FILTER='all';
 let ORDERS=[];
 
@@ -199,7 +195,6 @@ function pill(state,label){const c=cat(state);
 
 /* ===== 資料存取（示範/真實） ===== */
 async function loadOrders(){
-  if(DEMO){ORDERS=demoData();render();return;}
   try{const r=await fetch(API_BASE+'/api/orders');ORDERS=await r.json();}
   catch(e){ORDERS=[];}
   render();
@@ -211,35 +206,24 @@ async function addOrder(){
   if(!o.trackNo){addMsg('請輸入快遞號碼','err');return;}
   document.getElementById('addBtn').disabled=true;addMsg('新增中…','');
   try{
-    if(DEMO){
-      const com=o.carrier==='auto'?autoDetect(o.trackNo):o.carrier;
-      const mk=mockStatus(o.trackNo,com);
-      ORDERS.unshift({id:'demo'+Date.now(),...o,carrier:com,carrierName:CARRIER_NAME[com],
-        state:mk.state,stateLabel:mk.stateLabel,latest:mk.list[0]?.text||'',timeline:mk.list,
-        lastUpdate:Date.now(),subscribed:true});
-      addMsg('✓ 已加入（示範）','ok');
-    }else{
-      const r=await fetch(API_BASE+'/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});
-      const j=await jsonOrThrow(r);
-      addMsg('✓ 已加入追蹤'+(j.warn?'（'+j.warn+'）':''),j.warn?'err':'ok');
-      await loadOrders();
-    }
+    const r=await fetch(API_BASE+'/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});
+    const j=await jsonOrThrow(r);
+    addMsg('✓ 已加入追蹤'+(j.warn?'（'+j.warn+'）':''),j.warn?'err':'ok');
+    await loadOrders();
     ['fItems','fSupplier','fOrderNo','fTrackNo','fPhone'].forEach(id=>document.getElementById(id).value='');
-    render();
   }catch(e){addMsg('新增失敗：'+e.message,'err');}
   finally{document.getElementById('addBtn').disabled=false;}
 }
 async function refreshOrder(id){
   const o=ORDERS.find(x=>x.id===id);if(!o)return;
-  if(DEMO){const mk=mockStatus(o.trackNo,o.carrier);Object.assign(o,{state:mk.state,stateLabel:mk.stateLabel,latest:mk.list[0]?.text||'',timeline:mk.list,lastUpdate:Date.now()});render();return;}
   try{const r=await fetch(API_BASE+'/api/orders/'+id+'/refresh',{method:'POST'});const j=await jsonOrThrow(r);
     if(j.order)Object.assign(o,j.order);render();}catch(e){alert('更新失敗：'+e.message);}
 }
 async function refreshAll(){for(const o of ORDERS){await refreshOrder(o.id);}}
 async function delOrder(id){
   if(!confirm('確定移除這筆訂單追蹤？'))return;
-  if(!DEMO){try{await fetch(API_BASE+'/api/orders/'+id,{method:'DELETE'});}catch(e){}}
-  ORDERS=ORDERS.filter(x=>x.id!==id);render();
+  try{await fetch(API_BASE+'/api/orders/'+id,{method:'DELETE'});}catch(e){}
+  ORDERS=ORDERS.filter(x=>x.id!==id);render();   // 無論後端結果，畫面一定移除
 }
 
 /* ===== 畫面 ===== */
@@ -282,8 +266,6 @@ function render(){
 }
 function setFilter(el){FILTER=el.dataset.f;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');render();}
 function toggleTl(id){document.getElementById('tl-'+id).classList.toggle('open');}
-function toggleDemo(){DEMO=!DEMO;document.getElementById('demoSwitch').classList.toggle('on',DEMO);
-  const b=document.getElementById('modeBadge');b.className='badge '+(DEMO?'demo':'live');b.textContent=DEMO?'示範模式':'即時模式';loadOrders();}
 function toggleSettings(){const e=document.getElementById('settingsBody');e.classList.toggle('open');
   document.getElementById('setToggle').textContent=e.classList.contains('open')?'收合':'展開';}
 
@@ -291,7 +273,7 @@ function toggleSettings(){const e=document.getElementById('settingsBody');e.clas
 async function jsonOrThrow(res){
   const ct=res.headers.get('content-type')||'';
   if(!ct.includes('application/json')){
-    throw new Error('偵測不到後端 API。請先啟動 server.js 並從 http://localhost:3000 開啟，或開回「示範模式」預覽。');
+    throw new Error('偵測不到後端 API（服務可能正在啟動，請稍候再試）。');
   }
   const j=await res.json();
   if(!res.ok||j.error)throw new Error(j.error||('HTTP '+res.status));
@@ -299,7 +281,6 @@ async function jsonOrThrow(res){
 }
 /* ===== AI 辨識截圖 ===== */
 async function runOcr(dataUrl){
-  if(DEMO){ocrMsg('請先關閉「示範模式」（AI 辨識需後端）','err');return;}
   ocrMsg('AI 辨識中…（約 3~6 秒）','');
   try{
     const r=await fetch(API_BASE+'/api/ocr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl})});
@@ -321,35 +302,6 @@ const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[
 function addMsg(t,cls){const el=document.getElementById('addMsg');el.textContent=t;
   el.style.color=cls==='ok'?'var(--ok)':cls==='err'?'var(--err)':'var(--sub)';}
 
-/* ===== 示範資料 ===== */
-function mockStatus(no,car){
-  const now=Date.now();const t=h=>new Date(now-h*3600e3).toISOString().slice(0,16).replace('T',' ');
-  if(/^SF/i.test(no))return{state:3,stateLabel:'已簽收',list:[
-    {time:t(1),text:'【深圳市】您的快件已被前台代簽收，感謝使用順豐'},
-    {time:t(4),text:'【深圳市】派件員 王師傅 正在派送'},
-    {time:t(10),text:'【深圳市】快件到達深圳福田集散中心'},
-    {time:t(20),text:'【廣州市】順豐速運已收取快件'}]};
-  if(/^EMS/i.test(no))return{state:1,stateLabel:'已攬收',list:[
-    {time:t(2),text:'【北京市】快件在北京郵政速遞完成分揀，發往上海'},
-    {time:t(5),text:'【北京市】EMS 已攬收'}]};
-  if(/^YD|^ZT/i.test(no))return{state:2,stateLabel:'疑難件',list:[
-    {time:t(3),text:'【上海市】地址資訊不詳，暫存網點待處理'},
-    {time:t(9),text:'【上海市】快件到達上海轉運中心'}]};
-  return{state:0,stateLabel:'運輸中',list:[
-    {time:t(2),text:'【杭州市】快件離開杭州蕭山轉運中心，發往蘇州'},
-    {time:t(8),text:'【杭州市】'+(CARRIER_NAME[car]||'快遞')+' 已收取快件'}]};
-}
-function demoData(){
-  const mk=(no,car,o)=>{const m=mockStatus(no,car);return{id:'demo-'+no,trackNo:no,carrier:car,carrierName:CARRIER_NAME[car],
-    state:m.state,stateLabel:m.stateLabel,latest:m.list[0].text,timeline:m.list,lastUpdate:Date.now(),subscribed:true,...o};};
-  return[
-    mk('SF1234567890123','shunfeng',{items:'A4影印紙 5箱',supplier:'晨光文具',orderNo:'PO-20260706-001',purchaseTime:'2026-07-06'}),
-    mk('YT7654321098765','yuantong',{items:'USB-C 傳輸線 100條',supplier:'綠聯官方店',orderNo:'PO-20260707-004',purchaseTime:'2026-07-07'}),
-    mk('YD3312345678901','yunda',{items:'紙箱 60×40 200個',supplier:'包裝大王',orderNo:'PO-20260705-011',purchaseTime:'2026-07-05'}),
-    mk('EMS9988776655443','ems',{items:'公司印章 x3',supplier:'刻章師傅',orderNo:'PO-20260708-002',purchaseTime:'2026-07-08'}),
-  ];
-}
-
 /* ===== 後端狀態 ===== */
 async function loadConfig(){
   try{const r=await fetch(API_BASE+'/api/config');if(!r.ok)throw 0;const c=await r.json();
@@ -357,12 +309,13 @@ async function loadConfig(){
     document.getElementById('cfgStatus').innerHTML=
       `快遞100 ${y(c.hasKd100)}　·　AI 辨識 ${y(c.hasOcr)}　·　LINE Token ${y(c.hasLine)}　·　推送回呼 ${y(c.hasCallback)}　·　`
       +`群組機器人(webhook) ${y(c.hasWebhook)}　·　群組ID ${y(c.hasGroup)}<br>目前追蹤訂單：${c.orderCount} 筆`;
-  }catch(e){document.getElementById('cfgStatus').innerHTML='未偵測到後端（維持示範模式即可預覽介面）。';}
+  }catch(e){document.getElementById('cfgStatus').innerHTML='未偵測到後端（服務可能正在啟動，請稍候重新整理）。';}
 }
 
 /* init */
 document.getElementById('fTrackNo').addEventListener('keydown',e=>{if(e.key==='Enter')addOrder();});
 loadOrders();loadConfig();
+setInterval(loadOrders,30000);   // 每 30 秒自動同步，多人協作看到彼此更新
 </script>
 </body>
 </html>
