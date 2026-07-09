@@ -17,9 +17,9 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
-app.use(express.urlencoded({ extended: true, limit: '2mb' }));
-// 保留原始 body 供 LINE webhook 驗簽
-app.use(express.json({ limit: '2mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
+app.use(express.urlencoded({ extended: true, limit: '12mb' }));
+// 保留原始 body 供 LINE webhook 驗簽（圖片辨識需較大上限）
+app.use(express.json({ limit: '12mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(express.static(__dirname));
 
 // ---- 設定 ----
@@ -32,6 +32,7 @@ const SALT        = (process.env.KD100_SALT || 'kd100salt').trim();
 const LINE_TOKEN  = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim();
 const LINE_SECRET = (process.env.LINE_CHANNEL_SECRET || '').trim();   // webhook 驗簽用
 const DEFAULT_LINE_TO = (process.env.LINE_DEFAULT_TO || '').trim();   // 群組ID 或 使用者ID
+const OPENAI_API_KEY = (process.env.OPENAI_API_KEY || '').trim();    // 截圖 AI 辨識用
 const PORT        = process.env.PORT || 3000;
 
 const md5upper = s => crypto.createHash('md5').update(s, 'utf8').digest('hex').toUpperCase();
@@ -295,9 +296,48 @@ app.post('/api/line/test', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ============ 5. 截圖 AI 辨識（自動帶出訂單號/快遞號/手機末四碼）============
+const OCR_PROMPT = `你是物流截圖資訊擷取助手。從這張快遞/訂單截圖擷取以下欄位，只輸出 JSON、不要多餘文字：
+{"orderNo":"訂單編號","trackNo":"快遞單號","phone4":"收件人或寄件人手機號的後四碼","carrier":"快遞公司代碼"}
+規則：
+- carrier 只能是：shunfeng(順豐) / yuantong(圓通) / zhongtong(中通) / shentong(申通) / yunda(韻達) / jd(京東) / ems(郵政EMS) / huitongkuaidi(百世)，判斷不出留空。
+- phone4 取「收件人或寄件人」手機號的最後四位數字；務必忽略快遞員、客服、網點電話。若手機號被遮蔽或看不到，留空字串。
+- 找不到的欄位一律回空字串 ""。`;
+
+app.post('/api/ocr', async (req, res) => {
+  try {
+    if (!OPENAI_API_KEY) return res.status(500).json({ error: '後端未設定 OPENAI_API_KEY（AI 辨識金鑰）' });
+    const { image } = req.body;   // data URL: data:image/png;base64,....
+    if (!image) return res.status(400).json({ error: '缺少圖片' });
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + OPENAI_API_KEY },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        temperature: 0,
+        max_tokens: 300,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: OCR_PROMPT },
+            { type: 'image_url', image_url: { url: image } }
+          ]
+        }]
+      })
+    });
+    const j = await r.json();
+    if (!r.ok) return res.status(500).json({ error: j.error?.message || 'AI 辨識失敗' });
+    let txt = (j.choices?.[0]?.message?.content || '{}').replace(/```json|```/g, '').trim();
+    let data;
+    try { data = JSON.parse(txt); } catch (e) { return res.status(500).json({ error: '辨識結果解析失敗', raw: txt }); }
+    res.json({ ok: true, orderNo: data.orderNo || '', trackNo: data.trackNo || '', phone4: data.phone4 || '', carrier: data.carrier || '' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/config', (req, res) => {
   res.json({
     hasKd100: !!(KD_CUSTOMER && KD_KEY),
+    hasOcr: !!OPENAI_API_KEY,
     hasLine: !!LINE_TOKEN,
     hasCallback: !!CALLBACK_URL,
     hasWebhook: !!LINE_SECRET,

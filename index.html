@@ -111,6 +111,14 @@
   <!-- 新增訂單 -->
   <div class="card">
     <div class="card-head"><h3>➕ 新增採購訂單</h3></div>
+    <div style="margin-bottom:14px;padding:12px 14px;border:1px dashed var(--line);border-radius:10px;background:var(--card2)">
+      <label style="margin-bottom:8px">📷 AI 辨識截圖，自動填入下方欄位（訂單號 / 快遞號 / 手機末4碼 / 快遞公司）</label>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <input type="file" id="ocrFile" accept="image/*" onchange="ocrPick(event)" style="font-size:13px;padding:8px">
+        <span class="hint" style="margin:0">或直接在頁面上 Ctrl+V 貼上截圖</span>
+        <span id="ocrMsg" class="msg" style="margin:0"></span>
+      </div>
+    </div>
     <div class="form-grid">
       <div><label>採購品項</label><input id="fItems" placeholder="例：A4影印紙 5箱"></div>
       <div><label>供應商 / 賣家</label><input id="fSupplier" placeholder="例：晨光文具"></div>
@@ -289,6 +297,25 @@ async function jsonOrThrow(res){
   if(!res.ok||j.error)throw new Error(j.error||('HTTP '+res.status));
   return j;
 }
+/* ===== AI 辨識截圖 ===== */
+async function runOcr(dataUrl){
+  if(DEMO){ocrMsg('請先關閉「示範模式」（AI 辨識需後端）','err');return;}
+  ocrMsg('AI 辨識中…（約 3~6 秒）','');
+  try{
+    const r=await fetch(API_BASE+'/api/ocr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl})});
+    const j=await jsonOrThrow(r);
+    if(j.orderNo)document.getElementById('fOrderNo').value=j.orderNo;
+    if(j.trackNo)document.getElementById('fTrackNo').value=j.trackNo;
+    if(j.phone4)document.getElementById('fPhone').value=j.phone4;
+    if(j.carrier)document.getElementById('fCarrier').value=j.carrier;
+    const got=[j.orderNo&&'訂單號',j.trackNo&&'快遞號',j.phone4&&'手機末4碼',j.carrier&&'快遞公司'].filter(Boolean);
+    ocrMsg(got.length?('✓ 已帶入：'+got.join('、')+'，核對後按「加入追蹤」'):'沒辨識到欄位，請換清楚一點的截圖','ok');
+  }catch(e){ocrMsg('辨識失敗：'+e.message,'err');}
+}
+function ocrPick(e){const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>runOcr(rd.result);rd.readAsDataURL(f);}
+function ocrMsg(t,cls){const el=document.getElementById('ocrMsg');el.textContent=t;el.style.color=cls==='ok'?'var(--ok)':cls==='err'?'var(--err)':'var(--sub)';}
+document.addEventListener('paste',e=>{const items=(e.clipboardData||{}).items||[];for(const it of items){if(it.type&&it.type.startsWith('image/')){const f=it.getAsFile();const rd=new FileReader();rd.onload=()=>runOcr(rd.result);rd.readAsDataURL(f);e.preventDefault();break;}}});
+
 const v=id=>document.getElementById(id).value;
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function addMsg(t,cls){const el=document.getElementById('addMsg');el.textContent=t;
@@ -328,7 +355,7 @@ async function loadConfig(){
   try{const r=await fetch(API_BASE+'/api/config');if(!r.ok)throw 0;const c=await r.json();
     const y=v=>v?'<span style="color:var(--ok)">✓</span>':'<span style="color:var(--err)">✗</span>';
     document.getElementById('cfgStatus').innerHTML=
-      `快遞100 ${y(c.hasKd100)}　·　LINE Token ${y(c.hasLine)}　·　推送回呼 ${y(c.hasCallback)}　·　`
+      `快遞100 ${y(c.hasKd100)}　·　AI 辨識 ${y(c.hasOcr)}　·　LINE Token ${y(c.hasLine)}　·　推送回呼 ${y(c.hasCallback)}　·　`
       +`群組機器人(webhook) ${y(c.hasWebhook)}　·　群組ID ${y(c.hasGroup)}<br>目前追蹤訂單：${c.orderCount} 筆`;
   }catch(e){document.getElementById('cfgStatus').innerHTML='未偵測到後端（維持示範模式即可預覽介面）。';}
 }
