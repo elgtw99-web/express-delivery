@@ -46,16 +46,28 @@ const saveSubs = () => fs.writeFileSync(SUBS_FILE, JSON.stringify(SUBS, null, 2)
 // ---- Firestore（訂單持久化 + 多人同步）----
 const admin = require('firebase-admin');
 let db = null;
+// 依序嘗試：Render Secret File → 專案內檔 → 環境變數
+function loadServiceAccount() {
+  const files = ['/etc/secrets/firebase-key.json', path.join(__dirname, 'firebase-key.json')];
+  for (const f of files) {
+    try { const sa = JSON.parse(fs.readFileSync(f, 'utf8')); console.log('讀到金鑰檔：', f); return sa; }
+    catch (e) { /* 試下一個 */ }
+  }
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try { return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); }
+    catch (e) { console.error('FIREBASE_SERVICE_ACCOUNT JSON 解析失敗：', e.message); }
+  }
+  return null;
+}
 try {
-  const saRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (saRaw) {
-    const sa = JSON.parse(saRaw);
+  const sa = loadServiceAccount();
+  if (sa) {
     if (sa.private_key) sa.private_key = sa.private_key.replace(/\\n/g, '\n'); // 兼容被轉義的換行
     admin.initializeApp({ credential: admin.cert(sa) });
     db = admin.firestore();
-    console.log('✅ Firestore 已連線');
+    console.log('✅ Firestore 已連線，專案：', sa.project_id);
   } else {
-    console.warn('⚠️ 未設定 FIREBASE_SERVICE_ACCOUNT，暫用記憶體儲存（重啟會遺失）');
+    console.warn('⚠️ 未提供 Firebase 金鑰，暫用記憶體儲存（重啟會遺失）');
   }
 } catch (e) { console.error('Firebase 初始化失敗：', e.message); }
 
