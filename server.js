@@ -67,10 +67,12 @@ function autoDetectServer(no){
   return 'shunfeng';
 }
 
-// 共用：即時查詢
-async function kd100Query(num, com){
+// 共用：即時查詢（phone = 收/寄件人手機號後四碼，順豐/中通等需要）
+async function kd100Query(num, com, phone){
   if (!KD_CUSTOMER || !KD_KEY) throw new Error('後端未設定 KD100_CUSTOMER / KD100_KEY');
-  const param = JSON.stringify({ com: com || 'auto', num });
+  const p = { com: com || 'auto', num };
+  if (phone) p.phone = phone;
+  const param = JSON.stringify(p);
   const sign = md5upper(param + KD_KEY + KD_CUSTOMER);
   const body = new URLSearchParams({ customer: KD_CUSTOMER, sign, param });
   const r = await fetch('https://poll.kuaidi100.com/poll/query.do', {
@@ -88,11 +90,11 @@ async function kd100Query(num, com){
 }
 
 // 共用：訂閱推送
-async function kd100Subscribe(num, com){
+async function kd100Subscribe(num, com, phone){
   if (!CALLBACK_URL) throw new Error('後端未設定 CALLBACK_URL（快遞100推送回呼網址）');
   const param = {
     company: com, number: num, key: KD_SECRET,
-    parameters: { callbackurl: CALLBACK_URL, salt: SALT, resultv2: '1', autoCom: '0', phone: '' }
+    parameters: { callbackurl: CALLBACK_URL, salt: SALT, resultv2: '1', autoCom: '0', phone: phone || '' }
   };
   const body = new URLSearchParams({ schema: 'json', param: JSON.stringify(param) });
   const r = await fetch('https://poll.kuaidi100.com/poll', {
@@ -105,9 +107,9 @@ async function kd100Subscribe(num, com){
 // ============ 1. 即時查詢 ============
 app.post('/api/query', async (req, res) => {
   try {
-    const { num, com } = req.body;
+    const { num, com, phone } = req.body;
     if (!num) return res.status(400).json({ error: '缺少單號 num' });
-    res.json(await kd100Query(num, com));
+    res.json(await kd100Query(num, com, phone));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -118,21 +120,21 @@ app.get('/api/orders', (req, res) => {
 
 app.post('/api/orders', async (req, res) => {
   try {
-    const { items, supplier, purchaseTime, orderNo, trackNo, carrier, lineTo } = req.body;
+    const { items, supplier, purchaseTime, orderNo, trackNo, carrier, lineTo, phone } = req.body;
     if (!trackNo) return res.status(400).json({ error: '缺少快遞號碼 trackNo' });
     const com = (carrier && carrier !== 'auto') ? carrier : autoDetectServer(trackNo);
     const id = 'o' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const order = {
       id, items: items || '', supplier: supplier || '', purchaseTime: purchaseTime || '',
       orderNo: orderNo || '', trackNo, carrier: com, carrierName: CARRIER_NAME[com] || com,
-      lineTo: lineTo || DEFAULT_LINE_TO, state: null, stateLabel: '待更新', latest: '',
-      timeline: [], notified: false, subscribed: false, createdAt: Date.now(), lastUpdate: null
+      phone: phone || '', lineTo: lineTo || DEFAULT_LINE_TO, state: null, stateLabel: '待更新',
+      latest: '', timeline: [], notified: false, subscribed: false, createdAt: Date.now(), lastUpdate: null
     };
     let warn = '';
-    try { await kd100Subscribe(trackNo, com); order.subscribed = true; }
+    try { await kd100Subscribe(trackNo, com, phone); order.subscribed = true; }
     catch (e) { warn = '訂閱未成功：' + e.message; }
     try {
-      const q = await kd100Query(trackNo, com);
+      const q = await kd100Query(trackNo, com, phone);
       order.state = q.state; order.stateLabel = q.stateLabel;
       order.latest = q.list[0]?.text || ''; order.timeline = q.list; order.lastUpdate = Date.now();
     } catch (e) { /* 查不到先留待更新 */ }
@@ -145,7 +147,7 @@ app.post('/api/orders/:id/refresh', async (req, res) => {
   try {
     const o = ORDERS[req.params.id];
     if (!o) return res.status(404).json({ error: '找不到訂單' });
-    const q = await kd100Query(o.trackNo, o.carrier);
+    const q = await kd100Query(o.trackNo, o.carrier, o.phone);
     o.state = q.state; o.stateLabel = q.stateLabel;
     o.latest = q.list[0]?.text || ''; o.timeline = q.list; o.lastUpdate = Date.now();
     saveOrders();
@@ -272,7 +274,7 @@ app.post('/api/line/webhook', async (req, res) => {
       const order = findOrderByKeyword(text);
       if (order) {
         let q = null;
-        try { q = await kd100Query(order.trackNo, order.carrier); } catch (e) {}
+        try { q = await kd100Query(order.trackNo, order.carrier, order.phone); } catch (e) {}
         reply = formatOrderReply(order, q);
       } else if (/^[A-Za-z0-9]{6,}$/.test(text)) {
         try {

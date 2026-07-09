@@ -130,6 +130,7 @@
         </select>
       </div>
       <div><label>快遞號碼</label><input id="fTrackNo" placeholder="例：SF1234567890123"></div>
+      <div><label>手機末四碼 <span style="color:var(--warn)">順豐/中通需填</span></label><input id="fPhone" placeholder="收/寄件人手機後4碼" maxlength="4"></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
       <button id="addBtn" onclick="addOrder()">加入追蹤</button>
@@ -197,7 +198,8 @@ async function loadOrders(){
 }
 async function addOrder(){
   const o={items:v('fItems'),supplier:v('fSupplier'),purchaseTime:v('fDate'),
-    orderNo:v('fOrderNo'),trackNo:v('fTrackNo').trim(),carrier:document.getElementById('fCarrier').value};
+    orderNo:v('fOrderNo'),trackNo:v('fTrackNo').trim(),carrier:document.getElementById('fCarrier').value,
+    phone:v('fPhone').trim()};
   if(!o.trackNo){addMsg('請輸入快遞號碼','err');return;}
   document.getElementById('addBtn').disabled=true;addMsg('新增中…','');
   try{
@@ -214,7 +216,7 @@ async function addOrder(){
       addMsg('✓ 已加入追蹤'+(j.warn?'（'+j.warn+'）':''),j.warn?'err':'ok');
       await loadOrders();
     }
-    ['fItems','fSupplier','fOrderNo','fTrackNo'].forEach(id=>document.getElementById(id).value='');
+    ['fItems','fSupplier','fOrderNo','fTrackNo','fPhone'].forEach(id=>document.getElementById(id).value='');
     render();
   }catch(e){addMsg('新增失敗：'+e.message,'err');}
   finally{document.getElementById('addBtn').disabled=false;}
