@@ -158,6 +158,8 @@
 
   <!-- 篩選 + 清單 -->
   <div class="toolbar">
+    <select id="monthSel" onchange="setMonth(this.value)" style="max-width:150px;width:auto"><option value="recent">近2個月</option><option value="all">全部月份</option></select>
+    <select id="fwdSel" onchange="setFwd(this.value)" style="max-width:130px;width:auto"><option value="all">全部集運</option><option value="彭先生">彭先生</option><option value="乾坤">乾坤</option><option value="其他集運">其他集運</option></select>
     <span class="chip active" data-f="all" onclick="setFilter(this)">全部</span>
     <span class="chip" data-f="transit" onclick="setFilter(this)">運輸中</span>
     <span class="chip" data-f="signed" onclick="setFilter(this)">已簽收</span>
@@ -191,6 +193,8 @@
 <script>
 const API_BASE='';        // 同源部署留空
 let FILTER='all';
+let MONTH='recent';       // 月份分頁：預設近2個月
+let FWD='all';            // 集運商篩選
 let ORDERS=[];
 
 const CARRIER_NAME={shunfeng:'順豐速運',yuantong:'圓通速遞',zhongtong:'中通快遞',shentong:'申通快遞',
@@ -212,6 +216,7 @@ function pill(state,label){const c=cat(state);
 async function loadOrders(){
   try{const r=await fetch(API_BASE+'/api/orders');ORDERS=await r.json();}
   catch(e){ORDERS=[];}
+  populateMonths();
   render();
 }
 function addProdRow(name,qty,price){
@@ -260,6 +265,13 @@ async function delOrder(id){
 function render(){
   const kw=v('search').trim();
   let list=ORDERS.filter(o=>FILTER==='all'?true:(FILTER==='arrived'?o.arrived:cat(o.state)===FILTER));
+  // 月份分頁（避免頁面無限長）
+  if(MONTH!=='all'){
+    const months=[...new Set(ORDERS.map(orderMonth))].filter(Boolean).sort().reverse();
+    if(MONTH==='recent'){const keep=new Set(months.slice(0,2));list=list.filter(o=>keep.has(orderMonth(o)));}
+    else list=list.filter(o=>orderMonth(o)===MONTH);
+  }
+  if(FWD!=='all')list=list.filter(o=>forwarder(o)===FWD);
   if(kw)list=list.filter(o=>[o.items,o.supplier,o.orderNo,o.trackNo].some(x=>(x||'').includes(kw)));
   // 統計（用全部，不受篩選）
   document.getElementById('stTotal').textContent=ORDERS.length;
@@ -280,6 +292,7 @@ function render(){
             供應商：<b>${esc(o.supplier||'-')}</b> &nbsp;·&nbsp; 訂單：<b>${esc(o.orderNo||'-')}</b><br>
             ${o.carrierName||CARRIER_NAME[o.carrier]||o.carrier}　<b>${esc(o.trackNo)}</b>
             ${o.purchaseTime?' &nbsp;·&nbsp; 購買：'+esc(o.purchaseTime):''}
+            ${o.recipient?'<br>🚢 集運：<b style="color:var(--txt)">'+forwarder(o)+'</b>（'+esc(o.recipient)+'）':''}
           </div>
         </div>
         ${pill(o.state,o.stateLabel)}
@@ -324,6 +337,16 @@ function render(){
     </div>`;
   }).join('');
 }
+function orderMonth(o){let m=(o.purchaseTime||'').slice(0,7);if(!/^\d{4}-\d{2}$/.test(m)){try{m=new Date(o.createdAt||Date.now()).toISOString().slice(0,7);}catch(e){m='';}}return m;}
+function forwarder(o){const r=(o.recipient||'');if(r.includes('彭永秋'))return'彭先生';if(r.includes('乾坤')||r.includes('干坤')||/QK/i.test(r))return'乾坤';return'其他集運';}
+function setFwd(vv){FWD=vv;render();}
+function populateMonths(){
+  const sel=document.getElementById('monthSel');if(!sel)return;const cur=sel.value||MONTH;
+  const months=[...new Set(ORDERS.map(orderMonth))].filter(Boolean).sort().reverse();
+  sel.innerHTML='<option value="recent">近2個月</option>'+months.map(m=>'<option value="'+m+'">'+m+'</option>').join('')+'<option value="all">全部月份</option>';
+  sel.value=cur;
+}
+function setMonth(vv){MONTH=vv;render();}
 function setFilter(el){FILTER=el.dataset.f;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');render();}
 function toggleTl(id){document.getElementById('tl-'+id).classList.toggle('open');}
 function toggleArrival(id){const el=document.getElementById('arr-'+id);el.style.display=el.style.display==='none'?'block':'none';}
@@ -422,6 +445,7 @@ async function parseImport(rows){
     trackNo:colIndex(H,['物流单号','运单号','物流單號','運單號']),
     phone:colIndex(H,['联系手机','联系电话','手机','手機','聯絡電話']),
     created:colIndex(H,['提交时间','创建时间','下单时间','提交時間','創建時間','購買時間']),
+    recipient:colIndex(H,['收货人姓名','收件人姓名','收货人','收件人','收貨人']),
     note:colIndex(H,['订单备注','买家留言','备注','買家留言','備註'])
   };
   if(I.orderNo<0||I.trackNo<0){importMsg('無法辨識此表格（需有「訂單號」與「物流/運單號」欄位）','err');return;}
@@ -435,7 +459,7 @@ async function parseImport(rows){
         carrier:mapCarrier(g(r,I.carrier)), trackNo:String(g(r,I.trackNo)||'').trim(),
         phone:(''+(g(r,I.phone)||'')).replace(/\D/g,'').slice(-4),
         goodsTotal:0, freight:num(g(r,I.freight)), actualPay:num(g(r,I.actualPay)),
-        note:s2t(g(r,I.note)||''), products:[]};
+        recipient:s2t(g(r,I.recipient)||''), note:s2t(g(r,I.note)||''), products:[]};
     }
     const nm=s2t(g(r,I.title)||'');
     if(nm){
@@ -447,6 +471,8 @@ async function parseImport(rows){
       map[on].goodsTotal+=up*qty;
     }
   }
+  // 有「實付金額」就直接當貨品成本（已含運費/折扣），國內運費歸 0 避免重複計
+  Object.values(map).forEach(o=>{ if(o.actualPay>0){ o.goodsTotal=o.actualPay; o.freight=0; } });
   const orders=Object.values(map).filter(o=>o.trackNo);
   const noTrack=Object.values(map).length-orders.length;
   const prodCount=orders.reduce((s,o)=>s+o.products.length,0);

@@ -297,7 +297,7 @@ app.post('/api/orders/batch', async (req, res) => {
           supplier: it.supplier || '', purchaseTime: it.purchaseTime || '', orderNo: it.orderNo || '',
           trackNo: String(it.trackNo).trim(), carrier: com, carrierName: CARRIER_NAME[com] || com, phone: it.phone || '',
           lineTo: DEFAULT_LINE_TO, state: null, stateLabel: '待更新', latest: '', timeline: [], notified: false, subscribed: false,
-          arrived: false, arrivalDate: '', arrivalNote: it.note || '',
+          arrived: false, arrivalDate: '', arrivalNote: it.note || '', recipient: it.recipient || '',
           region: '大陸', currency: 'RMB', goodsTotal: Number(it.goodsTotal) || 0, freight: Number(it.freight) || 0, actualPay: Number(it.actualPay) || 0,
           createdAt: Date.now(), lastUpdate: null, source: 'import'
         };
