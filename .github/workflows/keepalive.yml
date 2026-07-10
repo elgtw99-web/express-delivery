@@ -1,0 +1,16 @@
+name: Keep Render Awake
+
+# 每 10 分鐘 ping 一次後端，避免 Render 免費方案閒置休眠
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          echo "Pinging at $(date -u)"
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://kuaidi-logistics-tracker.onrender.com/api/config || true
