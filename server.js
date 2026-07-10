@@ -46,17 +46,21 @@ const saveSubs = () => fs.writeFileSync(SUBS_FILE, JSON.stringify(SUBS, null, 2)
 // ---- Firestore（訂單持久化 + 多人同步）----
 const admin = require('firebase-admin');
 let db = null;
+let FB_STATUS = 'not-started';
 // 依序嘗試：Render Secret File → 專案內檔 → 環境變數
 function loadServiceAccount() {
   const files = ['/etc/secrets/firebase-key.json', path.join(__dirname, 'firebase-key.json')];
   for (const f of files) {
-    try { const sa = JSON.parse(fs.readFileSync(f, 'utf8')); console.log('讀到金鑰檔：', f); return sa; }
-    catch (e) { /* 試下一個 */ }
+    if (fs.existsSync(f)) {
+      try { const sa = JSON.parse(fs.readFileSync(f, 'utf8')); FB_STATUS = 'file-loaded:' + f; return sa; }
+      catch (e) { FB_STATUS = 'file-parse-error(' + f + '): ' + e.message; return null; }
+    }
   }
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    try { return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); }
-    catch (e) { console.error('FIREBASE_SERVICE_ACCOUNT JSON 解析失敗：', e.message); }
+    try { const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); FB_STATUS = 'env-loaded'; return sa; }
+    catch (e) { FB_STATUS = 'env-parse-error: ' + e.message; return null; }
   }
+  FB_STATUS = 'no-key-found';
   return null;
 }
 try {
@@ -65,11 +69,12 @@ try {
     if (sa.private_key) sa.private_key = sa.private_key.replace(/\\n/g, '\n'); // 兼容被轉義的換行
     admin.initializeApp({ credential: admin.cert(sa) });
     db = admin.firestore();
+    FB_STATUS = 'connected:' + sa.project_id;
     console.log('✅ Firestore 已連線，專案：', sa.project_id);
   } else {
-    console.warn('⚠️ 未提供 Firebase 金鑰，暫用記憶體儲存（重啟會遺失）');
+    console.warn('⚠️ 未提供/無法讀取 Firebase 金鑰：', FB_STATUS);
   }
-} catch (e) { console.error('Firebase 初始化失敗：', e.message); }
+} catch (e) { FB_STATUS = 'init-error: ' + e.message; console.error('Firebase 初始化失敗：', e.message); }
 
 const memOrders = {};   // 未接資料庫時的後備
 async function ordersAll() {
@@ -418,7 +423,9 @@ app.get('/api/diag', (req, res) => {
     customerLen: rawC.length, customerHadWhitespace: rawC !== rawC.trim(), customerHasInnerSpace: /\s/.test(rawC.trim()),
     keyLen: rawK.length, keyHadWhitespace: rawK !== rawK.trim(), keyHasInnerSpace: /\s/.test(rawK.trim()),
     secretLen: rawS.length,
-    callbackUrl: CALLBACK_URL
+    callbackUrl: CALLBACK_URL,
+    fbStatus: FB_STATUS,
+    secretFileExists: fs.existsSync('/etc/secrets/firebase-key.json')
   });
 });
 
