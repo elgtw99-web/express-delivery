@@ -55,8 +55,17 @@
     color:var(--sub);cursor:pointer}
   .chip.active{border-color:var(--pri);color:#fff;background:rgba(91,140,255,.12)}
   .toolbar input{max-width:220px;margin-left:auto}
-  /* 訂單卡 */
-  .order{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+  /* 訂單卡（可折疊，預設收合，頁面更精簡） */
+  details.order{background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:10px;overflow:hidden}
+  details.order>summary{list-style:none;cursor:pointer;padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  details.order>summary::-webkit-details-marker{display:none}
+  details.order[open]>summary{border-bottom:1px solid var(--line);background:rgba(255,255,255,.02)}
+  .osum-title{flex:1;min-width:160px;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .osum-cost{font-size:12.5px;color:var(--txt);font-weight:600}
+  .osum-sub{width:100%;font-size:11.5px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .odetail{padding:12px 16px}
+  .phone-need{margin:10px 0;padding:9px 11px;background:rgba(246,196,84,.1);border:1px solid rgba(246,196,84,.4);border-radius:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--warn)}
+  .phone-need input{width:90px;padding:6px 8px}
   .order-top{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
   .order-main{flex:1;min-width:220px}
   .order-title{font-size:15.5px;font-weight:700}
@@ -249,22 +258,22 @@ async function addOrder(){
   }catch(e){addMsg('新增失敗：'+e.message,'err');}
   finally{document.getElementById('addBtn').disabled=false;}
 }
-async function refreshOrder(id,retried){
+async function refreshOrder(id){
   const o=ORDERS.find(x=>x.id===id);if(!o)return;
   try{
     const r=await fetch(API_BASE+'/api/orders/'+id+'/refresh',{method:'POST'});const j=await jsonOrThrow(r);
     if(j.order)Object.assign(o,j.order);render();
   }catch(e){
-    if(/408|验证码|驗證/.test(e.message)&&!retried){
-      const ph=prompt('此單（中通/順豐）需手機末四碼驗證。\n請輸入收件人手機後4碼：',o.phone||'');
-      if(ph&&ph.trim()){
-        try{const rr=await fetch(API_BASE+'/api/orders/'+id+'/cost',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:ph.trim()})});const jj=await jsonOrThrow(rr);Object.assign(o,jj.order);}catch(_){}
-        return refreshOrder(id,true);
-      }
-      return;
-    }
-    alert('更新失敗：'+e.message);
+    if(/408|验证码|驗證/.test(e.message)){render();alert('「'+(o.items||o.trackNo)+'」需手機末4碼驗證。\n請展開該筆訂單，在黃色提示框填入收件人手機後4碼再查詢。');}
+    else alert('更新失敗：'+e.message);
   }
+}
+async function fillPhone(id){
+  const el=document.getElementById('ph-'+id);const ph=el?el.value.trim():'';
+  if(!ph){alert('請先填入手機末4碼');return;}
+  const o=ORDERS.find(x=>x.id===id);if(!o)return;
+  try{const r=await fetch(API_BASE+'/api/orders/'+id+'/cost',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:ph})});const j=await jsonOrThrow(r);Object.assign(o,j.order);}catch(e){}
+  refreshOrder(id);
 }
 async function refreshAll(){for(const o of ORDERS){await refreshOrder(o.id);}}
 async function delOrder(id){
@@ -296,19 +305,18 @@ function render(){
   box.innerHTML=list.map(o=>{
     const tl=(o.timeline||[]).map((it,i)=>`<li class="${i===0?'first':''}"><span class="dot"></span>
       <div class="t-time">${it.time||''}</div><div class="t-text">${esc(it.text||'')}</div></li>`).join('');
-    return `<div class="order">
-      <div class="order-top">
-        <div class="order-main">
-          <div class="order-title">${esc(o.items||'(未填品項)')}</div>
-          <div class="order-meta">
-            供應商：<b>${esc(o.supplier||'-')}</b> &nbsp;·&nbsp; 訂單：<b>${esc(o.orderNo||'-')}</b><br>
-            ${o.carrierName||CARRIER_NAME[o.carrier]||o.carrier}　<b>${esc(o.trackNo)}</b>
-            ${o.purchaseTime?' &nbsp;·&nbsp; 購買：'+esc(o.purchaseTime):''}
-            ${o.recipient?'<br>🚢 集運：<b style="color:var(--txt)">'+forwarder(o)+'</b>（'+esc(o.recipient)+'）':''}
-          </div>
-        </div>
+    const _tot=(o.goodsTotal||0)+(o.freight||0)+(Number(o.intlFreight)||0);
+    const _needPhone=(o.carrier==='zhongtong'||o.carrier==='shunfeng')&&!o.phone&&(o.state==null);
+    return `<details class="order">
+      <summary>
+        <span class="osum-title">${esc(o.items||'(未填品項)')}</span>
         ${pill(o.state,o.stateLabel)}
-      </div>
+        ${_tot?`<span class="osum-cost">${o.currency||'RMB'} ${_tot.toFixed(2)}</span>`:''}
+        <span class="osum-sub">${esc(o.supplier||'-')} · ${o.carrierName||CARRIER_NAME[o.carrier]||o.carrier} ${esc(o.trackNo)}${o.recipient?' · 🚢'+forwarder(o):''}${_needPhone?' · <span style="color:var(--warn)">⚠️缺手機4碼</span>':''}</span>
+      </summary>
+      <div class="odetail">
+        <div class="order-meta">訂單：<b>${esc(o.orderNo||'-')}</b>${o.purchaseTime?' &nbsp;·&nbsp; 購買：'+esc(o.purchaseTime):''}${o.recipient?'<br>🚢 集運：<b style="color:var(--txt)">'+forwarder(o)+'</b>（'+esc(o.recipient)+'）':''}</div>
+        ${_needPhone?`<div class="phone-need">⚠️ 中通/順豐需「收件人手機末4碼」才能查詢：<input id="ph-${o.id}" maxlength="4" placeholder="末4碼"><button class="btn-sm" onclick="fillPhone('${o.id}')">儲存並查詢</button></div>`:''}
       ${(o.products&&o.products.length)?`<div style="margin-top:8px;font-size:13px">${o.products.map(p=>{
         const short=(Number(p.orderedQty)||0)-(Number(p.arrivedQty)||0);
         const badge=(p.orderedQty>0&&short<=0)?'<span style="color:var(--ok)">✅到齊</span>':(p.arrivedQty>0?'<span style="color:var(--warn)">短少'+short+'</span>':'');
@@ -346,7 +354,8 @@ function render(){
         </div>
       </div>
       <ul class="timeline" id="tl-${o.id}">${tl||'<li class="t-text" style="padding-left:0;color:var(--sub)">尚無軌跡</li>'}</ul>
-    </div>`;
+      </div>
+    </details>`;
   }).join('');
 }
 function orderMonth(o){let m=(o.purchaseTime||'').slice(0,7);if(!/^\d{4}-\d{2}$/.test(m)){try{m=new Date(o.createdAt||Date.now()).toISOString().slice(0,7);}catch(e){m='';}}return m;}
@@ -455,7 +464,7 @@ async function parseImport(rows){
     freight:colIndex(H,['运费','運費']),
     carrier:colIndex(H,['物流公司']),
     trackNo:colIndex(H,['物流单号','运单号','物流單號','運單號']),
-    phone:colIndex(H,['联系手机','联系电话','手机','手機','聯絡電話']),
+    phone:(colIndex(H,['联系手机','手机','手機'])>=0?colIndex(H,['联系手机','手机','手機']):colIndex(H,['联系电话','電話','聯絡電話'])),
     created:colIndex(H,['提交时间','创建时间','下单时间','提交時間','創建時間','購買時間']),
     recipient:colIndex(H,['收货人姓名','收件人姓名','收货人','收件人','收貨人']),
     note:colIndex(H,['订单备注','买家留言','备注','買家留言','備註'])
