@@ -1,0 +1,16 @@
+name: Poll and Notify
+
+on:
+  schedule:
+    - cron: '0 0,12 * * *'
+  workflow_dispatch:
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger poll endpoint
+        run: |
+          echo "Polling at $(date -u)"
+          curl -s -w "HTTP %{http_code}\n" \
+            "https://kuaidi-logistics-tracker.onrender.com/api/cron/poll?key=${{ secrets.CRON_KEY }}"
