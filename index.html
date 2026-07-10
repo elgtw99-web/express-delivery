@@ -175,6 +175,8 @@
     <span class="chip" data-f="exc" onclick="setFilter(this)">異常件</span>
     <span class="chip" data-f="arrived" onclick="setFilter(this)">已到貨</span>
     <button class="btn-ghost btn-sm" onclick="refreshAll()">↻ 全部更新</button>
+    <input id="defRate" type="number" step="0.0001" placeholder="預設匯率" title="沒填匯率的訂單，用這個匯率把 RMB 換算台幣" style="max-width:100px;margin-left:0;width:auto">
+    <button class="btn-ghost btn-sm" onclick="genCostSheet()">📋 成本清單</button>
     <input id="search" placeholder="搜尋品項/供應商/單號…" oninput="render()">
   </div>
   <div id="orders"></div>
@@ -284,16 +286,7 @@ async function delOrder(id){
 
 /* ===== 畫面 ===== */
 function render(){
-  const kw=v('search').trim();
-  let list=ORDERS.filter(o=>FILTER==='all'?true:(FILTER==='arrived'?o.arrived:cat(o.state)===FILTER));
-  // 月份分頁（避免頁面無限長）
-  if(MONTH!=='all'){
-    const months=[...new Set(ORDERS.map(orderMonth))].filter(Boolean).sort().reverse();
-    if(MONTH==='recent'){const keep=new Set(months.slice(0,2));list=list.filter(o=>keep.has(orderMonth(o)));}
-    else list=list.filter(o=>orderMonth(o)===MONTH);
-  }
-  if(FWD!=='all')list=list.filter(o=>forwarder(o)===FWD);
-  if(kw)list=list.filter(o=>[o.items,o.supplier,o.orderNo,o.trackNo].some(x=>(x||'').includes(kw)));
+  let list=currentList();
   // 統計（用全部，不受篩選）
   document.getElementById('stTotal').textContent=ORDERS.length;
   document.getElementById('stTransit').textContent=ORDERS.filter(o=>cat(o.state)==='transit'&&o.state!=null).length;
@@ -309,6 +302,7 @@ function render(){
     const _needPhone=(o.carrier==='zhongtong'||o.carrier==='shunfeng')&&!o.phone&&(o.state==null);
     return `<details class="order">
       <summary>
+        <input type="checkbox" class="cost-pick" data-id="${o.id}" title="勾選加入成本清單" onclick="event.stopPropagation()" style="margin-right:2px;transform:scale(1.15);cursor:pointer">
         <span class="osum-title">${esc(o.items||'(未填品項)')}</span>
         ${pill(o.state,o.stateLabel)}
         ${_tot?`<span class="osum-cost">${o.currency||'RMB'} ${_tot.toFixed(2)}</span>`:''}
@@ -410,6 +404,72 @@ function genReceipt(id){
     +'<div class="noprint" style="margin-top:22px"><button onclick="window.print()" style="padding:10px 20px;font-size:15px">列印 / 存成 PDF</button></div>'
     +'</body></html>';
   const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}else alert('請允許彈出視窗以顯示進貨單');
+}
+/* ===== 成本清單（會計用：RMB＋台幣，海運/國內運費單列，可列印＋匯出Excel）===== */
+function currentList(){
+  const kw=v('search').trim();
+  let list=ORDERS.filter(o=>FILTER==='all'?true:(FILTER==='arrived'?o.arrived:cat(o.state)===FILTER));
+  if(MONTH!=='all'){
+    const months=[...new Set(ORDERS.map(orderMonth))].filter(Boolean).sort().reverse();
+    if(MONTH==='recent'){const keep=new Set(months.slice(0,2));list=list.filter(o=>keep.has(orderMonth(o)));}
+    else list=list.filter(o=>orderMonth(o)===MONTH);
+  }
+  if(FWD!=='all')list=list.filter(o=>forwarder(o)===FWD);
+  if(kw)list=list.filter(o=>[o.items,o.supplier,o.orderNo,o.trackNo].some(x=>(x||'').includes(kw)));
+  return list;
+}
+function buildCostRows(){
+  const picked=[...document.querySelectorAll('.cost-pick:checked')].map(c=>c.dataset.id);
+  const list=picked.length?ORDERS.filter(o=>picked.includes(o.id)):currentList();
+  const defRate=Number(v('defRate'))||0;
+  const rows=[];let tR=0,tT=0;
+  list.forEach(o=>{
+    const rate=Number(o.exchangeRate)||defRate;
+    const date=(o.purchaseTime||o.arrivalDate||'').slice(0,10);
+    (o.products||[]).forEach(p=>{
+      const qty=Number(p.orderedQty)||0,price=Number(p.unitPrice)||0;
+      const rmb=price*qty,twd=rmb*rate;tR+=rmb;tT+=twd;
+      rows.push({date,supplier:o.supplier||'',orderNo:o.orderNo||'',name:p.name,qty,price,rate,rmb,twd});
+    });
+    if(Number(o.freight)>0){const rmb=Number(o.freight),twd=rmb*rate;tR+=rmb;tT+=twd;rows.push({date,supplier:o.supplier||'',orderNo:o.orderNo||'',name:'國內運費',qty:'',price:'',rate,rmb,twd});}
+    if(Number(o.intlFreight)>0){const rmb=Number(o.intlFreight),twd=rmb*rate;tR+=rmb;tT+=twd;rows.push({date,supplier:o.supplier||'',orderNo:o.orderNo||'',name:(o.shipMethod||'海運')+'運費',qty:'',price:'',rate,rmb,twd});}
+  });
+  return {rows,tR,tT,count:list.length};
+}
+function genCostSheet(){
+  const b=buildCostRows();
+  if(!b.rows.length){alert('沒有可列入的訂單。請先勾選訂單，或用上方月份/集運篩選出要結算的訂單。');return;}
+  window.__costBuilt=b;
+  const picked=document.querySelectorAll('.cost-pick:checked').length;
+  const period=picked?('自選 '+b.count+' 筆'):(MONTH==='all'?'全部月份':MONTH==='recent'?'近2個月':MONTH);
+  const f2=n=>(typeof n==='number'?n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):(n===''||n==null?'':n));
+  const trs=b.rows.map(r=>'<tr><td>'+(r.date||'')+'</td><td>'+esc(r.supplier||'')+'</td><td>'+esc(r.orderNo||'')+'</td><td>'+esc(r.name||'')+'</td><td class="c">'+(r.qty!==''&&r.qty!=null?r.qty:'')+'</td><td class="r">'+f2(r.price)+'</td><td class="c">'+(r.rate||'')+'</td><td class="r">'+f2(r.rmb)+'</td><td class="r">'+f2(r.twd)+'</td></tr>').join('');
+  const html='<!doctype html><html><head><meta charset="utf-8"><title>成本清單</title><style>'
+    +'body{font-family:"Microsoft JhengHei",sans-serif;padding:28px;color:#000}'
+    +'h2{text-align:center;letter-spacing:6px;margin:0 0 6px}.sub{text-align:center;color:#555;font-size:13px;margin-bottom:16px}'
+    +'table{width:100%;border-collapse:collapse}th,td{border:1px solid #333;padding:6px 8px;font-size:12.5px}'
+    +'th{background:#eee}.c{text-align:center}.r{text-align:right}'
+    +'tfoot td{font-weight:bold;background:#f6f6f6}@media print{.noprint{display:none}}'
+    +'button{padding:9px 18px;font-size:14px;margin-right:10px}</style></head><body>'
+    +'<h2>成 本 清 單</h2><div class="sub">結算範圍：'+period+'　·　產生日期：'+new Date().toISOString().slice(0,10)+'</div>'
+    +'<table><thead><tr><th>日期</th><th>供應商</th><th>訂單編號</th><th>名稱</th><th>數量</th><th>單價(RMB)</th><th>匯率</th><th>小計(RMB)</th><th>小計(TWD)</th></tr></thead>'
+    +'<tbody>'+trs+'</tbody>'
+    +'<tfoot><tr><td colspan="7" class="r">合計</td><td class="r">'+f2(b.tR)+'</td><td class="r">'+f2(b.tT)+'</td></tr></tfoot></table>'
+    +'<div class="noprint" style="margin-top:20px"><button onclick="window.print()">🖨️ 列印 / 存 PDF</button><button onclick="window.opener&&window.opener.exportCostExcel()">⬇️ 匯出 Excel</button></div>'
+    +'</body></html>';
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}else alert('請允許彈出視窗以顯示成本清單');
+}
+function exportCostExcel(){
+  if(!window.__costBuilt){alert('請先產生成本清單');return;}
+  if(!window.XLSX){alert('Excel 函式庫尚未載入，請重新整理頁面');return;}
+  const {rows,tR,tT}=window.__costBuilt;
+  const aoa=[['日期','供應商','訂單編號','名稱','數量','單價(RMB)','匯率','小計(RMB)','小計(TWD)']];
+  rows.forEach(r=>aoa.push([r.date||'',r.supplier||'',r.orderNo||'',r.name||'',r.qty===''?'':Number(r.qty),r.price===''?'':Number(r.price),r.rate||'',Number(r.rmb.toFixed(2)),Number(r.twd.toFixed(2))]));
+  aoa.push(['','','','合計','','','',Number(tR.toFixed(2)),Number(tT.toFixed(2))]);
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=[{wch:11},{wch:14},{wch:18},{wch:26},{wch:7},{wch:11},{wch:8},{wch:12},{wch:12}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'成本清單');
+  XLSX.writeFile(wb,'成本清單_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 function toggleSettings(){const e=document.getElementById('settingsBody');e.classList.toggle('open');
   document.getElementById('setToggle').textContent=e.classList.contains('open')?'收合':'展開';}
