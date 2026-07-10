@@ -33,6 +33,7 @@ const LINE_TOKEN  = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim();
 const LINE_SECRET = (process.env.LINE_CHANNEL_SECRET || '').trim();   // webhook 驗簽用
 const DEFAULT_LINE_TO = (process.env.LINE_DEFAULT_TO || '').trim();   // 群組ID 或 使用者ID
 const OPENAI_API_KEY = (process.env.OPENAI_API_KEY || '').trim();    // 截圖 AI 辨識用
+const CRON_KEY    = (process.env.CRON_KEY || '').trim();             // 主動輪詢端點的保護金鑰
 const PORT        = process.env.PORT || 3000;
 
 const md5upper = s => crypto.createHash('md5').update(s, 'utf8').digest('hex').toUpperCase();
@@ -306,8 +307,10 @@ app.post('/api/orders/batch', async (req, res) => {
           region: '大陸', currency: 'RMB', goodsTotal: Number(it.goodsTotal) || 0, freight: Number(it.freight) || 0, actualPay: Number(it.actualPay) || 0,
           createdAt: Date.now(), lastUpdate: null, source: 'import'
         };
+        // 訂閱推送（免費、即時）— 一律訂閱，狀態變化由快遞100 主動推回 → 轉 LINE
+        try { await kd100Subscribe(order.trackNo, com, order.phone); order.subscribed = true; } catch (e) {}
+        // 即時查詢會扣額度，僅在勾選「同時查物流」時才查
         if (track) {
-          try { await kd100Subscribe(order.trackNo, com, order.phone); order.subscribed = true; } catch (e) {}
           try { const q = await kd100Query(order.trackNo, com, order.phone); order.state = q.state; order.stateLabel = q.stateLabel; order.latest = q.list[0]?.text || ''; order.timeline = q.list; order.lastUpdate = Date.now(); } catch (e) {}
         }
         await orderSet(order); created++;
@@ -530,6 +533,30 @@ app.get('/api/diag', (req, res) => {
     fbStatus: FB_STATUS,
     secretFileExists: fs.existsSync('/etc/secrets/firebase-key.json')
   });
+});
+
+// ============ 6. 保活訂閱：定期「重新訂閱」未簽收訂單（免費、不扣查詢額度）============
+// 即時推播主要靠快遞100 訂閱推送 → /api/kd100/callback → LINE（免費、即時）。
+// 此端點由 GitHub 排程每天早晚呼叫，確保未簽收訂單都保持在訂閱狀態，避免漏推。訂閱不扣查詢額度。
+app.get('/api/cron/poll', async (req, res) => {
+  try {
+    if (CRON_KEY && req.query.key !== CRON_KEY) return res.status(401).json({ error: 'bad key' });
+    const all = await ordersAll();
+    const targets = all.filter(o => o.trackNo && o.state !== 3);
+    let subscribed = 0; const errors = [];
+    for (const o of targets) {
+      try {
+        await kd100Subscribe(o.trackNo, o.carrier, o.phone);
+        if (!o.subscribed) { o.subscribed = true; await orderSet(o); }
+        subscribed++;
+      } catch (e) {
+        // 「重复订阅」代表已在訂閱中，視為成功
+        if (String(e.message).includes('重复订阅')) { subscribed++; if (!o.subscribed) { o.subscribed = true; await orderSet(o); } }
+        else errors.push(o.trackNo + '：' + e.message);
+      }
+    }
+    res.json({ ok: true, total: targets.length, subscribed, errors });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.listen(PORT, () => console.log(`✅ 採購貨物追蹤儀表盤啟動： http://localhost:${PORT}`));
