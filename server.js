@@ -67,7 +67,7 @@ try {
   const sa = loadServiceAccount();
   if (sa) {
     if (sa.private_key) sa.private_key = sa.private_key.replace(/\\n/g, '\n'); // 兼容被轉義的換行
-    admin.initializeApp({ credential: admin.cert(sa) });
+    admin.initializeApp({ credential: admin.credential.cert(sa) });
     db = admin.firestore();
     FB_STATUS = 'connected:' + sa.project_id;
     console.log('✅ Firestore 已連線，專案：', sa.project_id);
