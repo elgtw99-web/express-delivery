@@ -249,10 +249,22 @@ async function addOrder(){
   }catch(e){addMsg('新增失敗：'+e.message,'err');}
   finally{document.getElementById('addBtn').disabled=false;}
 }
-async function refreshOrder(id){
+async function refreshOrder(id,retried){
   const o=ORDERS.find(x=>x.id===id);if(!o)return;
-  try{const r=await fetch(API_BASE+'/api/orders/'+id+'/refresh',{method:'POST'});const j=await jsonOrThrow(r);
-    if(j.order)Object.assign(o,j.order);render();}catch(e){alert('更新失敗：'+e.message);}
+  try{
+    const r=await fetch(API_BASE+'/api/orders/'+id+'/refresh',{method:'POST'});const j=await jsonOrThrow(r);
+    if(j.order)Object.assign(o,j.order);render();
+  }catch(e){
+    if(/408|验证码|驗證/.test(e.message)&&!retried){
+      const ph=prompt('此單（中通/順豐）需手機末四碼驗證。\n請輸入收件人手機後4碼：',o.phone||'');
+      if(ph&&ph.trim()){
+        try{const rr=await fetch(API_BASE+'/api/orders/'+id+'/cost',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:ph.trim()})});const jj=await jsonOrThrow(rr);Object.assign(o,jj.order);}catch(_){}
+        return refreshOrder(id,true);
+      }
+      return;
+    }
+    alert('更新失敗：'+e.message);
+  }
 }
 async function refreshAll(){for(const o of ORDERS){await refreshOrder(o.id);}}
 async function delOrder(id){
@@ -437,8 +449,8 @@ async function parseImport(rows){
     supplier:colIndex(H,['店铺名称','卖家公司名','卖家会员名','店鋪','賣家','卖家']),
     title:colIndex(H,['商品名称','货品标题','商品標題','貨品標題']),
     qty:colIndex(H,['商品数量','数量','數量']),
-    unitPrice:colIndex(H,['单价','單價']),
-    amount:colIndex(H,['商品金额','货品总价','商品金額','貨品總價']),
+    unitPrice:colIndex(H,['单价','單價','商品金额','商品金額']),
+    lineTotal:colIndex(H,['货品总价','貨品總價']),
     actualPay:colIndex(H,['实付金额','实付款','實付']),
     freight:colIndex(H,['运费','運費']),
     carrier:colIndex(H,['物流公司']),
@@ -451,9 +463,12 @@ async function parseImport(rows){
   if(I.orderNo<0||I.trackNo<0){importMsg('無法辨識此表格（需有「訂單號」與「物流/運單號」欄位）','err');return;}
   const g=(r,i)=> i>=0 ? r[i] : '';
   const map={};
+  let lastOn='';
   for(let i=1;i<rows.length;i++){
-    const r=rows[i]; if(!r||!g(r,I.orderNo))continue;
-    const on=String(g(r,I.orderNo)).trim();
+    const r=rows[i]; if(!r)continue;
+    let on=String(g(r,I.orderNo)||'').trim();
+    if(on){ lastOn=on; } else { on=lastOn; }   // 空白訂單號 → 延續上一筆（多產品跨列）
+    if(!on)continue;
     if(!map[on]){
       map[on]={orderNo:on, supplier:s2t(g(r,I.supplier)||''), purchaseTime:String(g(r,I.created)||'').slice(0,10),
         carrier:mapCarrier(g(r,I.carrier)), trackNo:String(g(r,I.trackNo)||'').trim(),
@@ -464,9 +479,9 @@ async function parseImport(rows){
     const nm=s2t(g(r,I.title)||'');
     if(nm){
       const qty=num(g(r,I.qty))||0;
+      // 單價：优先「单价/商品金额」(本身即單價)；「货品总价」才是總額(÷數量)
       let up=I.unitPrice>=0?num(g(r,I.unitPrice)):0;
-      const amt=I.amount>=0?num(g(r,I.amount)):0;
-      if(!up && amt) up=qty?Math.round(amt/qty*100)/100:amt;   // 只有金額欄時，單價=金額/數量
+      if(!up && I.lineTotal>=0){ const lt=num(g(r,I.lineTotal)); up=qty?Math.round(lt/qty*100)/100:lt; }
       map[on].products.push({name:nm, orderedQty:qty, unitPrice:up, unit:''});
       map[on].goodsTotal+=up*qty;
     }
