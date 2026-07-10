@@ -236,24 +236,29 @@ app.post('/api/orders/:id/arrival', async (req, res) => {
   try {
     const o = await orderGet(req.params.id);
     if (!o) return res.status(404).json({ error: '找不到訂單' });
-    const { arrivals, arrivalNote } = req.body;   // arrivals: 依產品順序的到貨數量陣列
+    const { arrivals, defects, arrivalNote, receivedBy } = req.body;   // arrivals/defects: 依產品順序的實收/瑕疵數量陣列
     if (!Array.isArray(o.products)) o.products = [];
     if (Array.isArray(arrivals)) {
       arrivals.forEach((q, i) => { if (o.products[i]) o.products[i].arrivedQty = Number(q) || 0; });
     }
+    if (Array.isArray(defects)) {
+      defects.forEach((d, i) => { if (o.products[i]) o.products[i].defectQty = Number(d) || 0; });
+    }
     o.arrivalNote = arrivalNote || '';
+    o.receivedBy = receivedBy || o.receivedBy || '';
     o.arrivalDate = new Date().toISOString().slice(0, 10);
     o.arrived = o.products.length > 0 && o.products.every(p => p.orderedQty > 0 && p.arrivedQty >= p.orderedQty);
     o.lastUpdate = Date.now();
     await orderSet(o);
-    // LINE 通知（逐產品訂購 vs 到貨）
+    // LINE 通知（逐產品訂購 vs 實收，含瑕疵）
     const lines = o.products.map(p => {
       const short = (p.orderedQty || 0) - (p.arrivedQty || 0);
-      return `・${p.name}：訂購 ${p.orderedQty} / 到貨 ${p.arrivedQty}` + (short > 0 ? `（短少 ${short}）` : short < 0 ? `（多 ${-short}）` : ' ✅');
+      const def = p.defectQty > 0 ? `，瑕疵/損壞 ${p.defectQty}` : '';
+      return `・${p.name}：訂購 ${p.orderedQty} / 實收 ${p.arrivedQty}${def}` + (short > 0 ? `（短少 ${short}）` : short < 0 ? `（多 ${-short}）` : ' ✅');
     }).join('\n');
-    const head = o.arrived ? '📥 到貨報備（已到齊）' : '📥 到貨報備（部分到貨）';
-    const msg = `${head}\n訂單編號：${o.orderNo || '-'}\n供應商：${o.supplier || '-'}\n${lines}\n`
-      + (o.arrivalNote ? `備註：${o.arrivalNote}\n` : '') + `請業務確認進貨。`;
+    const head = o.arrived ? '📥 到貨清單（已到齊）' : '📥 到貨清單（部分到貨）';
+    const msg = `${head}\n日期：${o.arrivalDate}\n供應商：${o.supplier || '-'}\n訂單：${o.orderNo || '-'}\n────────\n${lines}\n────────\n`
+      + (o.arrivalNote ? `備註：${o.arrivalNote}\n` : '') + `收貨人：${o.receivedBy || '-'}\n請業務確認進貨。`;
     await pushLine(o.lineTo, msg);
     res.json({ ok: true, order: o });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -404,10 +409,15 @@ async function findOrderByKeyword(kw){
 }
 function formatOrderReply(o, q){
   const latest = q?.list?.[0];
-  return `📦 ${o.items || '(未填品項)'}\n供應商：${o.supplier || '-'}\n`
+  let s = `📦 ${o.items || '(未填品項)'}\n供應商：${o.supplier || '-'}\n`
     + `訂單編號：${o.orderNo || '-'}\n${o.carrierName} ${o.trackNo}\n`
     + `目前狀態：${q?.stateLabel || o.stateLabel}\n`
     + (latest ? `最新：${latest.text}\n時間：${latest.time}` : '');
+  if (o.arrivalDate) {
+    const al = (o.products || []).map(p => `・${p.name}：訂購${p.orderedQty}/實收${p.arrivedQty || 0}${p.defectQty > 0 ? ' 瑕疵' + p.defectQty : ''}`).join('\n');
+    s += `\n\n📥 到貨清單（${o.arrivalDate}）\n${al}` + (o.receivedBy ? `\n收貨人：${o.receivedBy}` : '');
+  }
+  return s;
 }
 
 // ---- LINE Webhook：群組內打關鍵字主動查詢 ----

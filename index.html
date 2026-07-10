@@ -322,7 +322,8 @@ function render(){
         const badge=(p.orderedQty>0&&short<=0)?'<span style="color:var(--ok)">✅到齊</span>':(p.arrivedQty>0?'<span style="color:var(--warn)">短少'+short+'</span>':'');
         const sub=(Number(p.unitPrice)||0)*(Number(p.orderedQty)||0);
         const cost=p.unitPrice?' ｜單價 '+p.unitPrice+' 小計 '+sub.toFixed(2):'';
-        return '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed var(--line)"><span>'+esc(p.name)+'</span><span style="color:var(--sub)">訂購 '+(p.orderedQty||0)+'／到貨 '+(p.arrivedQty||0)+' '+badge+cost+'</span></div>';
+        const def=p.defectQty>0?' <span style="color:var(--err)">瑕疵'+p.defectQty+'</span>':'';
+        return '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed var(--line)"><span>'+esc(p.name)+'</span><span style="color:var(--sub)">訂購 '+(p.orderedQty||0)+'／到貨 '+(p.arrivedQty||0)+' '+badge+def+cost+'</span></div>';
       }).join('')}</div>`:''}
       ${(o.goodsTotal||o.freight||o.intlFreight)?`<div style="margin-top:6px;font-size:12.5px;color:var(--sub)">💰 ${o.currency||'RMB'}｜貨品 ${(o.goodsTotal||0).toFixed(2)} ＋國內運費 ${(o.freight||0).toFixed(2)}${o.intlFreight?' ＋'+(o.shipMethod||'國際運費')+' '+(Number(o.intlFreight)||0).toFixed(2):''} ＝ <b style="color:var(--txt)">合計 ${((o.goodsTotal||0)+(o.freight||0)+(Number(o.intlFreight)||0)).toFixed(2)}</b>${o.exchangeRate?'　匯率 '+o.exchangeRate:''}　·　${o.region||'大陸'}</div>`:''}
       ${o.latest?`<div class="latest">最新：<b>${esc(o.latest)}</b></div>`:''}
@@ -332,6 +333,7 @@ function render(){
         <button class="btn-ghost btn-sm" onclick="refreshOrder('${o.id}')">↻ 更新</button>
         <button class="btn-ghost btn-sm" onclick="toggleArrival('${o.id}')">${o.arrived?'✏️ 更新到貨':'📥 登記到貨'}</button>
         <button class="btn-ghost btn-sm" onclick="toggleCost('${o.id}')">💰 運費/成本</button>
+        <button class="btn-ghost btn-sm" onclick="genReceipt('${o.id}')">🖨️ 進貨單</button>
         <button class="btn-ghost btn-sm" onclick="delOrder('${o.id}')">移除</button>
       </div>
       <div id="cost-${o.id}" style="display:none;margin-top:10px;padding:12px;background:var(--card2);border:1px solid var(--line);border-radius:10px">
@@ -344,13 +346,16 @@ function render(){
         </div>
       </div>
       <div id="arr-${o.id}" style="display:none;margin-top:10px;padding:12px;background:var(--card2);border:1px solid var(--line);border-radius:10px">
-        ${(o.products||[]).map((p,i)=>`<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-          <span style="flex:2;font-size:13px">${esc(p.name)}<span style="color:var(--sub)">（訂購 ${p.orderedQty||0}）</span></span>
-          <input id="arrq-${o.id}-${i}" type="number" min="0" value="${p.arrivedQty||''}" placeholder="到貨數量" style="flex:1;min-width:100px">
+        <div style="font-size:12px;color:var(--sub);margin-bottom:6px">以實際收到為準，可填瑕疵／損壞數量</div>
+        ${(o.products||[]).map((p,i)=>`<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+          <span style="flex:2;min-width:130px;font-size:13px">${esc(p.name)}<span style="color:var(--sub)">（訂購 ${p.orderedQty||0}）</span></span>
+          <input id="arrq-${o.id}-${i}" type="number" min="0" value="${p.arrivedQty||''}" placeholder="實收數量" style="flex:1;min-width:90px">
+          <input id="arrd-${o.id}-${i}" type="number" min="0" value="${p.defectQty||''}" placeholder="瑕疵/損壞" style="flex:1;min-width:90px">
         </div>`).join('')}
-        <div style="display:flex;gap:8px;margin-top:6px">
-          <input id="arrn-${o.id}" value="${esc(o.arrivalNote||'')}" placeholder="備註（選填）" style="flex:1">
-          <button class="btn-sm" onclick="registerArrival('${o.id}')">確認到貨並通知業務</button>
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <input id="arrn-${o.id}" value="${esc(o.arrivalNote||'')}" placeholder="備註（瑕疵/出錯說明）" style="flex:2;min-width:140px">
+          <input id="arrby-${o.id}" value="${esc(o.receivedBy||'')}" placeholder="收貨人" style="flex:1;min-width:90px">
+          <button class="btn-sm" onclick="registerArrival('${o.id}')">確認到貨並通知</button>
         </div>
       </div>
       <ul class="timeline" id="tl-${o.id}">${tl||'<li class="t-text" style="padding-left:0;color:var(--sub)">尚無軌跡</li>'}</ul>
@@ -381,11 +386,30 @@ async function saveCost(id){
 async function registerArrival(id){
   const o=ORDERS.find(x=>x.id===id);if(!o)return;
   const arrivals=(o.products||[]).map((p,i)=>{const el=document.getElementById('arrq-'+id+'-'+i);return el?el.value:'';});
-  const note=v('arrn-'+id).trim();
+  const defects=(o.products||[]).map((p,i)=>{const el=document.getElementById('arrd-'+id+'-'+i);return el?el.value:'';});
+  const note=v('arrn-'+id).trim();const receivedBy=v('arrby-'+id).trim();
   try{
-    const r=await fetch(API_BASE+'/api/orders/'+id+'/arrival',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({arrivals,arrivalNote:note})});
+    const r=await fetch(API_BASE+'/api/orders/'+id+'/arrival',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({arrivals,defects,arrivalNote:note,receivedBy})});
     const j=await jsonOrThrow(r);Object.assign(o,j.order);render();
   }catch(e){alert('登記失敗：'+e.message);}
+}
+function genReceipt(id){
+  const o=ORDERS.find(x=>x.id===id);if(!o)return;
+  const rows=(o.products||[]).map(p=>'<tr><td>'+esc(p.name)+'</td><td class="c">'+(p.orderedQty||0)+'</td><td class="c">'+(p.arrivedQty||0)+'</td><td class="c">'+(p.defectQty||0)+'</td><td class="c">'+(p.unitPrice||'')+'</td></tr>').join('');
+  const html='<!doctype html><html><head><meta charset="utf-8"><title>進貨單</title><style>'
+    +'body{font-family:"Microsoft JhengHei",sans-serif;padding:32px;color:#000}'
+    +'h2{text-align:center;letter-spacing:10px;margin:0 0 18px}'
+    +'.top{display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px}'
+    +'table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:9px;font-size:13px}'
+    +'th{background:#eee}.c{text-align:center}td:first-child{min-width:280px}'
+    +'.foot{margin-top:16px;font-size:14px}@media print{.noprint{display:none}}</style></head><body>'
+    +'<h2>進 貨 單</h2>'
+    +'<div class="top"><span>日期：'+(o.arrivalDate||new Date().toISOString().slice(0,10))+'</span><span>供應商：'+esc(o.supplier||'')+'</span><span>訂單：'+esc(o.orderNo||'')+'</span></div>'
+    +'<table><thead><tr><th>品名/規格</th><th>採購數量</th><th>實收數量</th><th>瑕疵/損壞</th><th>單價</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<div class="foot">收貨人：'+esc(o.receivedBy||'____________')+'　　備註：'+esc(o.arrivalNote||'')+'</div>'
+    +'<div class="noprint" style="margin-top:22px"><button onclick="window.print()" style="padding:10px 20px;font-size:15px">列印 / 存成 PDF</button></div>'
+    +'</body></html>';
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}else alert('請允許彈出視窗以顯示進貨單');
 }
 function toggleSettings(){const e=document.getElementById('settingsBody');e.classList.toggle('open');
   document.getElementById('setToggle').textContent=e.classList.contains('open')?'收合':'展開';}
