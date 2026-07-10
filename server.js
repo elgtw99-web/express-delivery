@@ -219,6 +219,27 @@ app.delete('/api/orders/:id', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 登記到貨（進貨單）→ 更新訂單 + LINE 通知業務
+app.post('/api/orders/:id/arrival', async (req, res) => {
+  try {
+    const o = await orderGet(req.params.id);
+    if (!o) return res.status(404).json({ error: '找不到訂單' });
+    const { arrivalQty, arrivalNote, receiptNo } = req.body;
+    o.arrived = true;
+    o.arrivalDate = new Date().toISOString().slice(0, 10);
+    o.arrivalQty = arrivalQty || '';
+    o.arrivalNote = arrivalNote || '';
+    o.receiptNo = receiptNo || '';
+    o.lastUpdate = Date.now();
+    await orderSet(o);
+    const msg = `📥 到貨報備\n品項：${o.items || '-'}\n供應商：${o.supplier || '-'}\n`
+      + `訂單編號：${o.orderNo || '-'}\n到貨數量：${o.arrivalQty || '-'}\n`
+      + (o.arrivalNote ? `備註：${o.arrivalNote}\n` : '') + `請業務確認進貨。`;
+    await pushLine(o.lineTo, msg);
+    res.json({ ok: true, order: o });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ============ 3. 單號訂閱（相容舊用法）============
 app.post('/api/subscribe', async (req, res) => {
   try {

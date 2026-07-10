@@ -150,6 +150,7 @@
     <span class="chip" data-f="transit" onclick="setFilter(this)">運輸中</span>
     <span class="chip" data-f="signed" onclick="setFilter(this)">已簽收</span>
     <span class="chip" data-f="exc" onclick="setFilter(this)">異常件</span>
+    <span class="chip" data-f="arrived" onclick="setFilter(this)">已到貨</span>
     <button class="btn-ghost btn-sm" onclick="refreshAll()">↻ 全部更新</button>
     <input id="search" placeholder="搜尋品項/供應商/單號…" oninput="render()">
   </div>
@@ -229,7 +230,7 @@ async function delOrder(id){
 /* ===== 畫面 ===== */
 function render(){
   const kw=v('search').trim();
-  let list=ORDERS.filter(o=>FILTER==='all'||cat(o.state)===FILTER);
+  let list=ORDERS.filter(o=>FILTER==='all'?true:(FILTER==='arrived'?o.arrived:cat(o.state)===FILTER));
   if(kw)list=list.filter(o=>[o.items,o.supplier,o.orderNo,o.trackNo].some(x=>(x||'').includes(kw)));
   // 統計（用全部，不受篩選）
   document.getElementById('stTotal').textContent=ORDERS.length;
@@ -255,10 +256,19 @@ function render(){
         ${pill(o.state,o.stateLabel)}
       </div>
       ${o.latest?`<div class="latest">最新：<b>${esc(o.latest)}</b></div>`:''}
+      ${o.arrived?`<div class="latest" style="color:var(--ok)">📥 已到貨 ${esc(o.arrivalDate||'')}　數量：<b>${esc(o.arrivalQty||'-')}</b>${o.arrivalNote?'　備註：'+esc(o.arrivalNote):''}</div>`:''}
       <div class="order-actions">
         <button class="btn-ghost btn-sm" onclick="toggleTl('${o.id}')">物流軌跡</button>
         <button class="btn-ghost btn-sm" onclick="refreshOrder('${o.id}')">↻ 更新</button>
+        <button class="btn-ghost btn-sm" onclick="toggleArrival('${o.id}')">${o.arrived?'✏️ 更新到貨':'📥 登記到貨'}</button>
         <button class="btn-ghost btn-sm" onclick="delOrder('${o.id}')">移除</button>
+      </div>
+      <div id="arr-${o.id}" style="display:none;margin-top:10px;padding:12px;background:var(--card2);border:1px solid var(--line);border-radius:10px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="arrq-${o.id}" value="${esc(o.arrivalQty||'')}" placeholder="到貨數量" style="max-width:130px">
+          <input id="arrn-${o.id}" value="${esc(o.arrivalNote||'')}" placeholder="備註（選填）" style="flex:1;min-width:140px">
+          <button class="btn-sm" onclick="registerArrival('${o.id}')">確認到貨並通知業務</button>
+        </div>
       </div>
       <ul class="timeline" id="tl-${o.id}">${tl||'<li class="t-text" style="padding-left:0;color:var(--sub)">尚無軌跡</li>'}</ul>
     </div>`;
@@ -266,6 +276,17 @@ function render(){
 }
 function setFilter(el){FILTER=el.dataset.f;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');render();}
 function toggleTl(id){document.getElementById('tl-'+id).classList.toggle('open');}
+function toggleArrival(id){const el=document.getElementById('arr-'+id);el.style.display=el.style.display==='none'?'block':'none';}
+async function registerArrival(id){
+  const qty=v('arrq-'+id).trim(), note=v('arrn-'+id).trim();
+  if(!qty && !confirm('沒填到貨數量，仍要登記到貨並通知業務嗎？'))return;
+  try{
+    const r=await fetch(API_BASE+'/api/orders/'+id+'/arrival',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({arrivalQty:qty,arrivalNote:note})});
+    const j=await jsonOrThrow(r);
+    const o=ORDERS.find(x=>x.id===id);if(o)Object.assign(o,j.order);
+    render();
+  }catch(e){alert('登記失敗：'+e.message);}
+}
 function toggleSettings(){const e=document.getElementById('settingsBody');e.classList.toggle('open');
   document.getElementById('setToggle').textContent=e.classList.contains('open')?'收合':'展開';}
 
