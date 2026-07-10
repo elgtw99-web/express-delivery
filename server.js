@@ -104,7 +104,7 @@ let LAST_SOURCE = null;
 
 const CARRIER_NAME = {
   shunfeng:'順豐速運', yuantong:'圓通速遞', zhongtong:'中通快遞', shentong:'申通快遞',
-  yunda:'韻達速遞', jd:'京東物流', ems:'EMS/中國郵政', huitongkuaidi:'百世快遞'
+  yunda:'韻達速遞', jd:'京東物流', ems:'EMS/中國郵政', huitongkuaidi:'百世快遞', jtexpress:'極兔速遞'
 };
 const STATE_LABEL = {0:'運輸中',1:'已攬收',2:'疑難件',3:'已簽收',4:'退簽',5:'派件中',6:'退回'};
 
@@ -117,6 +117,7 @@ function autoDetectServer(no){
   if (/^(ST|77|55|66)/.test(no)) return 'shentong';
   if (/^(YD|12|19|31|39|43)/.test(no)) return 'yunda';
   if (/^JD/.test(no)) return 'jd';
+  if (/^JT/.test(no)) return 'jtexpress';
   if (/^(EMS|E[A-Z])/.test(no) || /^\d{13}$/.test(no)) return 'ems';
   if (/^(HT|A|B|K)/.test(no)) return 'huitongkuaidi';
   return 'shunfeng';
@@ -263,11 +264,12 @@ app.post('/api/orders/:id/cost', async (req, res) => {
   try {
     const o = await orderGet(req.params.id);
     if (!o) return res.status(404).json({ error: '找不到訂單' });
-    const { intlFreight, shipMethod, exchangeRate, freight } = req.body;
+    const { intlFreight, shipMethod, exchangeRate, freight, phone } = req.body;
     if (intlFreight !== undefined) o.intlFreight = Number(intlFreight) || 0;   // 國際段海運/空運費
     if (shipMethod !== undefined) o.shipMethod = shipMethod || '';             // 海運 / 空運
     if (exchangeRate !== undefined) o.exchangeRate = Number(exchangeRate) || 0; // 人民幣→台幣匯率(選填)
     if (freight !== undefined) o.freight = Number(freight) || 0;               // 國內運費(可修正)
+    if (phone !== undefined && phone !== '') o.phone = phone;                  // 補手機末四碼(中通/順豐查詢用)
     o.actualPay = (o.goodsTotal || 0) + (o.freight || 0);                      // 大陸段小計
     o.lastUpdate = Date.now();
     await orderSet(o);

@@ -194,7 +194,7 @@ let FILTER='all';
 let ORDERS=[];
 
 const CARRIER_NAME={shunfeng:'順豐速運',yuantong:'圓通速遞',zhongtong:'中通快遞',shentong:'申通快遞',
-  yunda:'韻達速遞',jd:'京東物流',ems:'EMS/郵政',huitongkuaidi:'百世快遞'};
+  yunda:'韻達速遞',jd:'京東物流',ems:'EMS/郵政',huitongkuaidi:'百世快遞',jtexpress:'極兔速遞'};
 function autoDetect(no){no=(no||'').toUpperCase();
   if(/^SF/.test(no))return'shunfeng';if(/^YT/.test(no))return'yuantong';
   if(/^(ZT|75|78)/.test(no))return'zhongtong';if(/^(ST|77|55|66)/.test(no))return'shentong';
@@ -306,7 +306,8 @@ function render(){
           <select id="costm-${o.id}" style="max-width:110px"><option value="">運送方式</option><option value="海運"${o.shipMethod==='海運'?' selected':''}>海運</option><option value="空運"${o.shipMethod==='空運'?' selected':''}>空運</option></select>
           <input id="costf-${o.id}" type="number" min="0" step="0.01" value="${o.intlFreight||''}" placeholder="國際運費(海運/空運)" style="flex:1;min-width:150px">
           <input id="costr-${o.id}" type="number" min="0" step="0.0001" value="${o.exchangeRate||''}" placeholder="匯率 RMB→TWD(選填)" style="flex:1;min-width:140px">
-          <button class="btn-sm" onclick="saveCost('${o.id}')">儲存成本</button>
+          <input id="costp-${o.id}" value="${o.phone||''}" maxlength="4" placeholder="手機末4碼(中通/順豐查詢用)" style="flex:1;min-width:150px">
+          <button class="btn-sm" onclick="saveCost('${o.id}')">儲存</button>
         </div>
       </div>
       <div id="arr-${o.id}" style="display:none;margin-top:10px;padding:12px;background:var(--card2);border:1px solid var(--line);border-radius:10px">
@@ -329,7 +330,7 @@ function toggleArrival(id){const el=document.getElementById('arr-'+id);el.style.
 function toggleCost(id){const el=document.getElementById('cost-'+id);el.style.display=el.style.display==='none'?'block':'none';}
 async function saveCost(id){
   const o=ORDERS.find(x=>x.id===id);if(!o)return;
-  const body={intlFreight:v('costf-'+id),shipMethod:v('costm-'+id),exchangeRate:v('costr-'+id)};
+  const body={intlFreight:v('costf-'+id),shipMethod:v('costm-'+id),exchangeRate:v('costr-'+id),phone:v('costp-'+id).trim()};
   try{const r=await fetch(API_BASE+'/api/orders/'+id+'/cost',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const j=await jsonOrThrow(r);Object.assign(o,j.order);render();}catch(e){alert('儲存失敗：'+e.message);}
 }
@@ -386,6 +387,7 @@ function mapCarrier(s){ s=(s||'').toString();
   if(s.includes('韵达')||s.includes('韻達'))return'yunda';
   if(s.includes('京东')||s.includes('京東'))return'jd';
   if(s.includes('百世')||s.includes('汇通')||s.includes('匯通'))return'huitongkuaidi';
+  if(s.includes('极兔')||s.includes('極兔')||/J&T|jtexpress|jitu/i.test(s))return'jtexpress';
   if(/EMS/i.test(s)||s.includes('邮政')||s.includes('郵政'))return'ems';
   return'auto'; }
 function importMsg(t,cls){const el=document.getElementById('importMsg');el.textContent=t;el.style.color=cls==='ok'?'var(--ok)':cls==='err'?'var(--err)':'var(--sub)';}
@@ -403,21 +405,47 @@ function importExcel(e){
   rd.readAsArrayBuffer(f);
   e.target.value='';
 }
+function colIndex(H,pats){for(let i=0;i<H.length;i++){const h=String(H[i]||'');if(pats.some(p=>h.includes(p)))return i;}return -1;}
 async function parseImport(rows){
   if(!rows||rows.length<2){importMsg('檔案沒有資料列','err');return;}
-  const C={orderNo:0,seller:3,sellerAlt:4,goodsTotal:5,freight:6,actualPay:8,created:10,phone:17,title:18,unitPrice:19,qty:20,unit:21,carrier:30,trackNo:31,note:49};
+  const H=rows[0];   // 依標題自動對應欄位（相容 1688 / 淘寶 等）
+  const I={
+    orderNo:colIndex(H,['订单编号','订单号','訂單編號','訂單號']),
+    supplier:colIndex(H,['店铺名称','卖家公司名','卖家会员名','店鋪','賣家','卖家']),
+    title:colIndex(H,['商品名称','货品标题','商品標題','貨品標題']),
+    qty:colIndex(H,['商品数量','数量','數量']),
+    unitPrice:colIndex(H,['单价','單價']),
+    amount:colIndex(H,['商品金额','货品总价','商品金額','貨品總價']),
+    actualPay:colIndex(H,['实付金额','实付款','實付']),
+    freight:colIndex(H,['运费','運費']),
+    carrier:colIndex(H,['物流公司']),
+    trackNo:colIndex(H,['物流单号','运单号','物流單號','運單號']),
+    phone:colIndex(H,['联系手机','联系电话','手机','手機','聯絡電話']),
+    created:colIndex(H,['提交时间','创建时间','下单时间','提交時間','創建時間','購買時間']),
+    note:colIndex(H,['订单备注','买家留言','备注','買家留言','備註'])
+  };
+  if(I.orderNo<0||I.trackNo<0){importMsg('無法辨識此表格（需有「訂單號」與「物流/運單號」欄位）','err');return;}
+  const g=(r,i)=> i>=0 ? r[i] : '';
   const map={};
   for(let i=1;i<rows.length;i++){
-    const r=rows[i]; if(!r||!r[C.orderNo])continue;
-    const on=String(r[C.orderNo]).trim();
+    const r=rows[i]; if(!r||!g(r,I.orderNo))continue;
+    const on=String(g(r,I.orderNo)).trim();
     if(!map[on]){
-      map[on]={orderNo:on, supplier:s2t(r[C.seller]||r[C.sellerAlt]||''), purchaseTime:String(r[C.created]||'').slice(0,10),
-        carrier:mapCarrier(r[C.carrier]), trackNo:String(r[C.trackNo]||'').trim(),
-        phone:(''+(r[C.phone]||'')).replace(/\D/g,'').slice(-4),
-        goodsTotal:num(r[C.goodsTotal]), freight:num(r[C.freight]), actualPay:num(r[C.actualPay]),
-        note:s2t(r[C.note]||''), products:[]};
+      map[on]={orderNo:on, supplier:s2t(g(r,I.supplier)||''), purchaseTime:String(g(r,I.created)||'').slice(0,10),
+        carrier:mapCarrier(g(r,I.carrier)), trackNo:String(g(r,I.trackNo)||'').trim(),
+        phone:(''+(g(r,I.phone)||'')).replace(/\D/g,'').slice(-4),
+        goodsTotal:0, freight:num(g(r,I.freight)), actualPay:num(g(r,I.actualPay)),
+        note:s2t(g(r,I.note)||''), products:[]};
     }
-    const nm=s2t(r[C.title]||''); if(nm) map[on].products.push({name:nm, orderedQty:num(r[C.qty]), unitPrice:num(r[C.unitPrice]), unit:s2t(r[C.unit]||'')});
+    const nm=s2t(g(r,I.title)||'');
+    if(nm){
+      const qty=num(g(r,I.qty))||0;
+      let up=I.unitPrice>=0?num(g(r,I.unitPrice)):0;
+      const amt=I.amount>=0?num(g(r,I.amount)):0;
+      if(!up && amt) up=qty?Math.round(amt/qty*100)/100:amt;   // 只有金額欄時，單價=金額/數量
+      map[on].products.push({name:nm, orderedQty:qty, unitPrice:up, unit:''});
+      map[on].goodsTotal+=up*qty;
+    }
   }
   const orders=Object.values(map).filter(o=>o.trackNo);
   const noTrack=Object.values(map).length-orders.length;
