@@ -107,7 +107,13 @@
 
   <!-- 新增訂單 -->
   <div class="card">
-    <div class="card-head"><h3>➕ 新增採購訂單</h3></div>
+    <div class="card-head"><h3>➕ 新增採購訂單</h3>
+      <span>
+        <input type="file" id="xlsxFile" accept=".xlsx,.xls" style="display:none" onchange="importExcel(event)">
+        <button class="btn-ghost btn-sm" onclick="document.getElementById('xlsxFile').click()">📄 批量匯入 Excel（1688/阿里）</button>
+      </span>
+    </div>
+    <div id="importMsg" class="msg" style="margin-bottom:6px"></div>
     <div style="margin-bottom:14px;padding:12px 14px;border:1px dashed var(--line);border-radius:10px;background:var(--card2)">
       <label style="margin-bottom:8px">📷 AI 辨識截圖，自動填入下方欄位（訂單號 / 快遞號 / 手機末4碼 / 快遞公司）</label>
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -116,8 +122,12 @@
         <span id="ocrMsg" class="msg" style="margin:0"></span>
       </div>
     </div>
+    <div style="margin-bottom:14px">
+      <label>採購品項（可多筆，一筆訂單可含多個產品）</label>
+      <div id="prodRows"></div>
+      <button class="btn-ghost btn-sm" onclick="addProdRow()" style="margin-top:2px">+ 新增產品</button>
+    </div>
     <div class="form-grid">
-      <div><label>採購品項</label><input id="fItems" placeholder="例：A4影印紙 5箱"></div>
       <div><label>供應商 / 賣家</label><input id="fSupplier" placeholder="例：晨光文具"></div>
       <div><label>購買時間</label><input id="fDate" type="date"></div>
       <div><label>訂單編號</label><input id="fOrderNo" placeholder="例：PO-20260708-001"></div>
@@ -174,6 +184,8 @@
   <p class="hint" style="text-align:center">採購貨物追蹤儀表盤 · 快遞100 即時物流 + LINE 群組機器人</p>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/full.min.js"></script>
 <script>
 const API_BASE='';        // 同源部署留空
 let FILTER='all';
@@ -200,18 +212,32 @@ async function loadOrders(){
   catch(e){ORDERS=[];}
   render();
 }
+function addProdRow(name,qty){
+  const div=document.createElement('div');
+  div.className='prow';div.style.cssText='display:flex;gap:6px;margin-bottom:6px';
+  div.innerHTML='<input class="p-name" placeholder="品項名稱" style="flex:2" value="'+(name?esc(name):'')+'">'
+    +'<input class="p-qty" type="number" min="0" placeholder="訂購數量" style="flex:1;min-width:100px" value="'+(qty||'')+'">'
+    +'<button class="btn-ghost btn-sm" onclick="this.parentElement.remove()">✕</button>';
+  document.getElementById('prodRows').appendChild(div);
+}
+function collectProducts(){
+  return [...document.querySelectorAll('#prodRows .prow')].map(r=>({name:r.querySelector('.p-name').value.trim(),orderedQty:r.querySelector('.p-qty').value})).filter(p=>p.name);
+}
 async function addOrder(){
-  const o={items:v('fItems'),supplier:v('fSupplier'),purchaseTime:v('fDate'),
+  const products=collectProducts();
+  const o={products,supplier:v('fSupplier'),purchaseTime:v('fDate'),
     orderNo:v('fOrderNo'),trackNo:v('fTrackNo').trim(),carrier:document.getElementById('fCarrier').value,
     phone:v('fPhone').trim()};
   if(!o.trackNo){addMsg('請輸入快遞號碼','err');return;}
+  if(!products.length){addMsg('請至少填一個採購品項','err');return;}
   document.getElementById('addBtn').disabled=true;addMsg('新增中…','');
   try{
     const r=await fetch(API_BASE+'/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});
     const j=await jsonOrThrow(r);
     addMsg('✓ 已加入追蹤'+(j.warn?'（'+j.warn+'）':''),j.warn?'err':'ok');
     await loadOrders();
-    ['fItems','fSupplier','fOrderNo','fTrackNo','fPhone'].forEach(id=>document.getElementById(id).value='');
+    ['fSupplier','fOrderNo','fTrackNo','fPhone'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('prodRows').innerHTML='';addProdRow();
   }catch(e){addMsg('新增失敗：'+e.message,'err');}
   finally{document.getElementById('addBtn').disabled=false;}
 }
@@ -255,8 +281,13 @@ function render(){
         </div>
         ${pill(o.state,o.stateLabel)}
       </div>
+      ${(o.products&&o.products.length)?`<div style="margin-top:8px;font-size:13px">${o.products.map(p=>{
+        const short=(Number(p.orderedQty)||0)-(Number(p.arrivedQty)||0);
+        const badge=(p.orderedQty>0&&short<=0)?'<span style="color:var(--ok)">✅到齊</span>':(p.arrivedQty>0?'<span style="color:var(--warn)">短少'+short+'</span>':'');
+        return '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed var(--line)"><span>'+esc(p.name)+'</span><span style="color:var(--sub)">訂購 '+(p.orderedQty||0)+'／到貨 '+(p.arrivedQty||0)+' '+badge+'</span></div>';
+      }).join('')}</div>`:''}
       ${o.latest?`<div class="latest">最新：<b>${esc(o.latest)}</b></div>`:''}
-      ${o.arrived?`<div class="latest" style="color:var(--ok)">📥 已到貨 ${esc(o.arrivalDate||'')}　數量：<b>${esc(o.arrivalQty||'-')}</b>${o.arrivalNote?'　備註：'+esc(o.arrivalNote):''}</div>`:''}
+      ${o.arrived?`<div class="latest" style="color:var(--ok)">📥 已到齊 ${esc(o.arrivalDate||'')}${o.arrivalNote?'　備註：'+esc(o.arrivalNote):''}</div>`:''}
       <div class="order-actions">
         <button class="btn-ghost btn-sm" onclick="toggleTl('${o.id}')">物流軌跡</button>
         <button class="btn-ghost btn-sm" onclick="refreshOrder('${o.id}')">↻ 更新</button>
@@ -264,9 +295,12 @@ function render(){
         <button class="btn-ghost btn-sm" onclick="delOrder('${o.id}')">移除</button>
       </div>
       <div id="arr-${o.id}" style="display:none;margin-top:10px;padding:12px;background:var(--card2);border:1px solid var(--line);border-radius:10px">
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <input id="arrq-${o.id}" value="${esc(o.arrivalQty||'')}" placeholder="到貨數量" style="max-width:130px">
-          <input id="arrn-${o.id}" value="${esc(o.arrivalNote||'')}" placeholder="備註（選填）" style="flex:1;min-width:140px">
+        ${(o.products||[]).map((p,i)=>`<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+          <span style="flex:2;font-size:13px">${esc(p.name)}<span style="color:var(--sub)">（訂購 ${p.orderedQty||0}）</span></span>
+          <input id="arrq-${o.id}-${i}" type="number" min="0" value="${p.arrivedQty||''}" placeholder="到貨數量" style="flex:1;min-width:100px">
+        </div>`).join('')}
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input id="arrn-${o.id}" value="${esc(o.arrivalNote||'')}" placeholder="備註（選填）" style="flex:1">
           <button class="btn-sm" onclick="registerArrival('${o.id}')">確認到貨並通知業務</button>
         </div>
       </div>
@@ -278,13 +312,12 @@ function setFilter(el){FILTER=el.dataset.f;document.querySelectorAll('.chip').fo
 function toggleTl(id){document.getElementById('tl-'+id).classList.toggle('open');}
 function toggleArrival(id){const el=document.getElementById('arr-'+id);el.style.display=el.style.display==='none'?'block':'none';}
 async function registerArrival(id){
-  const qty=v('arrq-'+id).trim(), note=v('arrn-'+id).trim();
-  if(!qty && !confirm('沒填到貨數量，仍要登記到貨並通知業務嗎？'))return;
+  const o=ORDERS.find(x=>x.id===id);if(!o)return;
+  const arrivals=(o.products||[]).map((p,i)=>{const el=document.getElementById('arrq-'+id+'-'+i);return el?el.value:'';});
+  const note=v('arrn-'+id).trim();
   try{
-    const r=await fetch(API_BASE+'/api/orders/'+id+'/arrival',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({arrivalQty:qty,arrivalNote:note})});
-    const j=await jsonOrThrow(r);
-    const o=ORDERS.find(x=>x.id===id);if(o)Object.assign(o,j.order);
-    render();
+    const r=await fetch(API_BASE+'/api/orders/'+id+'/arrival',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({arrivals,arrivalNote:note})});
+    const j=await jsonOrThrow(r);Object.assign(o,j.order);render();
   }catch(e){alert('登記失敗：'+e.message);}
 }
 function toggleSettings(){const e=document.getElementById('settingsBody');e.classList.toggle('open');
@@ -318,6 +351,67 @@ function ocrPick(e){const f=e.target.files[0];if(!f)return;const rd=new FileRead
 function ocrMsg(t,cls){const el=document.getElementById('ocrMsg');el.textContent=t;el.style.color=cls==='ok'?'var(--ok)':cls==='err'?'var(--err)':'var(--sub)';}
 document.addEventListener('paste',e=>{const items=(e.clipboardData||{}).items||[];for(const it of items){if(it.type&&it.type.startsWith('image/')){const f=it.getAsFile();const rd=new FileReader();rd.onload=()=>runOcr(rd.result);rd.readAsDataURL(f);e.preventDefault();break;}}});
 
+/* ===== 批量匯入 Excel（1688/阿里訂單匯出）===== */
+let _cvt=null;
+function s2t(s){ if(s==null||s==='')return''; s=String(s);
+  try{ if(!_cvt && window.OpenCC) _cvt=OpenCC.Converter({from:'cn',to:'tw'}); return _cvt?_cvt(s):s; }catch(e){return s;} }
+function num(s){ const n=parseFloat(String(s==null?'':s).replace(/[^\d.]/g,'')); return isNaN(n)?0:n; }
+function mapCarrier(s){ s=(s||'').toString();
+  if(s.includes('顺丰')||s.includes('順豐'))return'shunfeng';
+  if(s.includes('中通'))return'zhongtong';
+  if(s.includes('圆通')||s.includes('圓通'))return'yuantong';
+  if(s.includes('申通'))return'shentong';
+  if(s.includes('韵达')||s.includes('韻達'))return'yunda';
+  if(s.includes('京东')||s.includes('京東'))return'jd';
+  if(s.includes('百世')||s.includes('汇通')||s.includes('匯通'))return'huitongkuaidi';
+  if(/EMS/i.test(s)||s.includes('邮政')||s.includes('郵政'))return'ems';
+  return'auto'; }
+function importMsg(t,cls){const el=document.getElementById('importMsg');el.textContent=t;el.style.color=cls==='ok'?'var(--ok)':cls==='err'?'var(--err)':'var(--sub)';}
+function importExcel(e){
+  const f=e.target.files[0]; if(!f)return;
+  if(!window.XLSX){importMsg('Excel 函式庫尚未載入，請重新整理頁面再試','err');return;}
+  importMsg('讀取中…','');
+  const rd=new FileReader();
+  rd.onload=ev=>{ try{
+    const wb=XLSX.read(ev.target.result,{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+    parseImport(rows);
+  }catch(err){importMsg('解析失敗：'+err.message,'err');} };
+  rd.readAsArrayBuffer(f);
+  e.target.value='';
+}
+async function parseImport(rows){
+  if(!rows||rows.length<2){importMsg('檔案沒有資料列','err');return;}
+  const C={orderNo:0,seller:3,sellerAlt:4,goodsTotal:5,freight:6,actualPay:8,created:10,phone:17,title:18,unitPrice:19,qty:20,unit:21,carrier:30,trackNo:31,note:49};
+  const map={};
+  for(let i=1;i<rows.length;i++){
+    const r=rows[i]; if(!r||!r[C.orderNo])continue;
+    const on=String(r[C.orderNo]).trim();
+    if(!map[on]){
+      map[on]={orderNo:on, supplier:s2t(r[C.seller]||r[C.sellerAlt]||''), purchaseTime:String(r[C.created]||'').slice(0,10),
+        carrier:mapCarrier(r[C.carrier]), trackNo:String(r[C.trackNo]||'').trim(),
+        phone:(''+(r[C.phone]||'')).replace(/\D/g,'').slice(-4),
+        goodsTotal:num(r[C.goodsTotal]), freight:num(r[C.freight]), actualPay:num(r[C.actualPay]),
+        note:s2t(r[C.note]||''), products:[]};
+    }
+    const nm=s2t(r[C.title]||''); if(nm) map[on].products.push({name:nm, orderedQty:num(r[C.qty]), unitPrice:num(r[C.unitPrice]), unit:s2t(r[C.unit]||'')});
+  }
+  const orders=Object.values(map).filter(o=>o.trackNo);
+  const noTrack=Object.values(map).length-orders.length;
+  const prodCount=orders.reduce((s,o)=>s+o.products.length,0);
+  if(!orders.length){importMsg('沒有偵測到有效的運單號，無法匯入','err');return;}
+  if(!window.OpenCC) importMsg('（注意：簡繁轉換元件未載入，將以原文匯入）','err');
+  if(!confirm('偵測到 '+orders.length+' 筆訂單、'+prodCount+' 個產品'+(noTrack?('（另有 '+noTrack+' 筆無運單號將略過）'):'')+'。\n確認匯入？（狀態稍後可手動更新，不消耗額度）'))return;
+  importMsg('匯入中…','');
+  try{
+    const r=await fetch(API_BASE+'/api/orders/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orders,track:false})});
+    const j=await jsonOrThrow(r);
+    importMsg('✓ 匯入完成：新增 '+j.created+' 筆'+(j.skipped?('，略過重複 '+j.skipped+' 筆'):'')+(j.errors&&j.errors.length?('，'+j.errors.length+' 筆失敗'):''),'ok');
+    await loadOrders();
+  }catch(e){importMsg('匯入失敗：'+e.message,'err');}
+}
+
 const v=id=>document.getElementById(id).value;
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function addMsg(t,cls){const el=document.getElementById('addMsg');el.textContent=t;
@@ -335,6 +429,7 @@ async function loadConfig(){
 
 /* init */
 document.getElementById('fTrackNo').addEventListener('keydown',e=>{if(e.key==='Enter')addOrder();});
+addProdRow();                    // 預設一列產品輸入
 loadOrders();loadConfig();
 setInterval(loadOrders,30000);   // 每 30 秒自動同步，多人協作看到彼此更新
 </script>
