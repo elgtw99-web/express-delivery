@@ -179,22 +179,26 @@ app.get('/api/orders', async (req, res) => {
 
 app.post('/api/orders', async (req, res) => {
   try {
-    const { items, products, supplier, purchaseTime, orderNo, trackNo, carrier, lineTo, phone } = req.body;
+    const { items, products, supplier, purchaseTime, orderNo, trackNo, carrier, lineTo, phone, freight, currency, region } = req.body;
     if (!trackNo) return res.status(400).json({ error: '缺少快遞號碼 trackNo' });
     const com = (carrier && carrier !== 'auto') ? carrier : autoDetectServer(trackNo);
     const id = 'o' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    // 多產品：[{name, orderedQty}] → 標準化並補到貨欄位
+    // 多產品：[{name, orderedQty, unitPrice}] → 標準化並補到貨/成本欄位
     let prods = Array.isArray(products)
-      ? products.map(p => ({ name: (p.name || '').trim(), orderedQty: Number(p.orderedQty) || 0, arrivedQty: Number(p.arrivedQty) || 0 })).filter(p => p.name)
+      ? products.map(p => ({ name: (p.name || '').trim(), orderedQty: Number(p.orderedQty) || 0, unitPrice: Number(p.unitPrice) || 0, arrivedQty: Number(p.arrivedQty) || 0, unit: p.unit || '' })).filter(p => p.name)
       : [];
-    if (!prods.length && items) prods = [{ name: String(items).trim(), orderedQty: 0, arrivedQty: 0 }]; // 相容舊單一品項
+    if (!prods.length && items) prods = [{ name: String(items).trim(), orderedQty: 0, unitPrice: 0, arrivedQty: 0, unit: '' }]; // 相容舊單一品項
     const itemsSummary = prods.map(p => p.name + (p.orderedQty ? ' x' + p.orderedQty : '')).join('、');
+    const goodsTotal = prods.reduce((s, p) => s + (p.unitPrice || 0) * (p.orderedQty || 0), 0);
+    const fr = Number(freight) || 0;
     const order = {
       id, products: prods, items: itemsSummary, supplier: supplier || '', purchaseTime: purchaseTime || '',
       orderNo: orderNo || '', trackNo, carrier: com, carrierName: CARRIER_NAME[com] || com,
       phone: phone || '', lineTo: lineTo || DEFAULT_LINE_TO, state: null, stateLabel: '待更新',
       latest: '', timeline: [], notified: false, subscribed: false,
-      arrived: false, arrivalDate: '', arrivalNote: '', createdAt: Date.now(), lastUpdate: null
+      arrived: false, arrivalDate: '', arrivalNote: '',
+      region: region || '大陸', currency: currency || 'RMB', freight: fr, goodsTotal, actualPay: goodsTotal + fr,
+      createdAt: Date.now(), lastUpdate: null
     };
     let warn = '';
     try { await kd100Subscribe(trackNo, com, phone); order.subscribed = true; }
@@ -250,6 +254,23 @@ app.post('/api/orders/:id/arrival', async (req, res) => {
     const msg = `${head}\n訂單編號：${o.orderNo || '-'}\n供應商：${o.supplier || '-'}\n${lines}\n`
       + (o.arrivalNote ? `備註：${o.arrivalNote}\n` : '') + `請業務確認進貨。`;
     await pushLine(o.lineTo, msg);
+    res.json({ ok: true, order: o });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 編輯成本：事後補國際運費(海運/空運)、匯率
+app.post('/api/orders/:id/cost', async (req, res) => {
+  try {
+    const o = await orderGet(req.params.id);
+    if (!o) return res.status(404).json({ error: '找不到訂單' });
+    const { intlFreight, shipMethod, exchangeRate, freight } = req.body;
+    if (intlFreight !== undefined) o.intlFreight = Number(intlFreight) || 0;   // 國際段海運/空運費
+    if (shipMethod !== undefined) o.shipMethod = shipMethod || '';             // 海運 / 空運
+    if (exchangeRate !== undefined) o.exchangeRate = Number(exchangeRate) || 0; // 人民幣→台幣匯率(選填)
+    if (freight !== undefined) o.freight = Number(freight) || 0;               // 國內運費(可修正)
+    o.actualPay = (o.goodsTotal || 0) + (o.freight || 0);                      // 大陸段小計
+    o.lastUpdate = Date.now();
+    await orderSet(o);
     res.json({ ok: true, order: o });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

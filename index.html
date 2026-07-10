@@ -146,6 +146,8 @@
       </div>
       <div><label>快遞號碼</label><input id="fTrackNo" placeholder="例：SF1234567890123"></div>
       <div><label>手機末四碼 <span style="color:var(--warn)">順豐/中通需填</span></label><input id="fPhone" placeholder="收/寄件人手機後4碼" maxlength="4"></div>
+      <div><label>運費</label><input id="fFreight" type="number" min="0" step="0.01" placeholder="國際/國內運費"></div>
+      <div><label>幣值</label><select id="fCurrency"><option value="RMB">人民幣 RMB</option><option value="TWD">台幣 TWD</option></select></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
       <button id="addBtn" onclick="addOrder()">加入追蹤</button>
@@ -212,22 +214,23 @@ async function loadOrders(){
   catch(e){ORDERS=[];}
   render();
 }
-function addProdRow(name,qty){
+function addProdRow(name,qty,price){
   const div=document.createElement('div');
   div.className='prow';div.style.cssText='display:flex;gap:6px;margin-bottom:6px';
   div.innerHTML='<input class="p-name" placeholder="品項名稱" style="flex:2" value="'+(name?esc(name):'')+'">'
-    +'<input class="p-qty" type="number" min="0" placeholder="訂購數量" style="flex:1;min-width:100px" value="'+(qty||'')+'">'
+    +'<input class="p-qty" type="number" min="0" placeholder="數量" style="flex:1;min-width:70px" value="'+(qty||'')+'">'
+    +'<input class="p-price" type="number" min="0" step="0.01" placeholder="單價" style="flex:1;min-width:70px" value="'+(price||'')+'">'
     +'<button class="btn-ghost btn-sm" onclick="this.parentElement.remove()">✕</button>';
   document.getElementById('prodRows').appendChild(div);
 }
 function collectProducts(){
-  return [...document.querySelectorAll('#prodRows .prow')].map(r=>({name:r.querySelector('.p-name').value.trim(),orderedQty:r.querySelector('.p-qty').value})).filter(p=>p.name);
+  return [...document.querySelectorAll('#prodRows .prow')].map(r=>({name:r.querySelector('.p-name').value.trim(),orderedQty:r.querySelector('.p-qty').value,unitPrice:r.querySelector('.p-price').value})).filter(p=>p.name);
 }
 async function addOrder(){
   const products=collectProducts();
   const o={products,supplier:v('fSupplier'),purchaseTime:v('fDate'),
     orderNo:v('fOrderNo'),trackNo:v('fTrackNo').trim(),carrier:document.getElementById('fCarrier').value,
-    phone:v('fPhone').trim()};
+    phone:v('fPhone').trim(),freight:v('fFreight'),currency:document.getElementById('fCurrency').value};
   if(!o.trackNo){addMsg('請輸入快遞號碼','err');return;}
   if(!products.length){addMsg('請至少填一個採購品項','err');return;}
   document.getElementById('addBtn').disabled=true;addMsg('新增中…','');
@@ -236,7 +239,7 @@ async function addOrder(){
     const j=await jsonOrThrow(r);
     addMsg('✓ 已加入追蹤'+(j.warn?'（'+j.warn+'）':''),j.warn?'err':'ok');
     await loadOrders();
-    ['fSupplier','fOrderNo','fTrackNo','fPhone'].forEach(id=>document.getElementById(id).value='');
+    ['fSupplier','fOrderNo','fTrackNo','fPhone','fFreight'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('prodRows').innerHTML='';addProdRow();
   }catch(e){addMsg('新增失敗：'+e.message,'err');}
   finally{document.getElementById('addBtn').disabled=false;}
@@ -284,15 +287,27 @@ function render(){
       ${(o.products&&o.products.length)?`<div style="margin-top:8px;font-size:13px">${o.products.map(p=>{
         const short=(Number(p.orderedQty)||0)-(Number(p.arrivedQty)||0);
         const badge=(p.orderedQty>0&&short<=0)?'<span style="color:var(--ok)">✅到齊</span>':(p.arrivedQty>0?'<span style="color:var(--warn)">短少'+short+'</span>':'');
-        return '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed var(--line)"><span>'+esc(p.name)+'</span><span style="color:var(--sub)">訂購 '+(p.orderedQty||0)+'／到貨 '+(p.arrivedQty||0)+' '+badge+'</span></div>';
+        const sub=(Number(p.unitPrice)||0)*(Number(p.orderedQty)||0);
+        const cost=p.unitPrice?' ｜單價 '+p.unitPrice+' 小計 '+sub.toFixed(2):'';
+        return '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed var(--line)"><span>'+esc(p.name)+'</span><span style="color:var(--sub)">訂購 '+(p.orderedQty||0)+'／到貨 '+(p.arrivedQty||0)+' '+badge+cost+'</span></div>';
       }).join('')}</div>`:''}
+      ${(o.goodsTotal||o.freight||o.intlFreight)?`<div style="margin-top:6px;font-size:12.5px;color:var(--sub)">💰 ${o.currency||'RMB'}｜貨品 ${(o.goodsTotal||0).toFixed(2)} ＋國內運費 ${(o.freight||0).toFixed(2)}${o.intlFreight?' ＋'+(o.shipMethod||'國際運費')+' '+(Number(o.intlFreight)||0).toFixed(2):''} ＝ <b style="color:var(--txt)">合計 ${((o.goodsTotal||0)+(o.freight||0)+(Number(o.intlFreight)||0)).toFixed(2)}</b>${o.exchangeRate?'　匯率 '+o.exchangeRate:''}　·　${o.region||'大陸'}</div>`:''}
       ${o.latest?`<div class="latest">最新：<b>${esc(o.latest)}</b></div>`:''}
       ${o.arrived?`<div class="latest" style="color:var(--ok)">📥 已到齊 ${esc(o.arrivalDate||'')}${o.arrivalNote?'　備註：'+esc(o.arrivalNote):''}</div>`:''}
       <div class="order-actions">
         <button class="btn-ghost btn-sm" onclick="toggleTl('${o.id}')">物流軌跡</button>
         <button class="btn-ghost btn-sm" onclick="refreshOrder('${o.id}')">↻ 更新</button>
         <button class="btn-ghost btn-sm" onclick="toggleArrival('${o.id}')">${o.arrived?'✏️ 更新到貨':'📥 登記到貨'}</button>
+        <button class="btn-ghost btn-sm" onclick="toggleCost('${o.id}')">💰 運費/成本</button>
         <button class="btn-ghost btn-sm" onclick="delOrder('${o.id}')">移除</button>
+      </div>
+      <div id="cost-${o.id}" style="display:none;margin-top:10px;padding:12px;background:var(--card2);border:1px solid var(--line);border-radius:10px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <select id="costm-${o.id}" style="max-width:110px"><option value="">運送方式</option><option value="海運"${o.shipMethod==='海運'?' selected':''}>海運</option><option value="空運"${o.shipMethod==='空運'?' selected':''}>空運</option></select>
+          <input id="costf-${o.id}" type="number" min="0" step="0.01" value="${o.intlFreight||''}" placeholder="國際運費(海運/空運)" style="flex:1;min-width:150px">
+          <input id="costr-${o.id}" type="number" min="0" step="0.0001" value="${o.exchangeRate||''}" placeholder="匯率 RMB→TWD(選填)" style="flex:1;min-width:140px">
+          <button class="btn-sm" onclick="saveCost('${o.id}')">儲存成本</button>
+        </div>
       </div>
       <div id="arr-${o.id}" style="display:none;margin-top:10px;padding:12px;background:var(--card2);border:1px solid var(--line);border-radius:10px">
         ${(o.products||[]).map((p,i)=>`<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
@@ -311,6 +326,13 @@ function render(){
 function setFilter(el){FILTER=el.dataset.f;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');render();}
 function toggleTl(id){document.getElementById('tl-'+id).classList.toggle('open');}
 function toggleArrival(id){const el=document.getElementById('arr-'+id);el.style.display=el.style.display==='none'?'block':'none';}
+function toggleCost(id){const el=document.getElementById('cost-'+id);el.style.display=el.style.display==='none'?'block':'none';}
+async function saveCost(id){
+  const o=ORDERS.find(x=>x.id===id);if(!o)return;
+  const body={intlFreight:v('costf-'+id),shipMethod:v('costm-'+id),exchangeRate:v('costr-'+id)};
+  try{const r=await fetch(API_BASE+'/api/orders/'+id+'/cost',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await jsonOrThrow(r);Object.assign(o,j.order);render();}catch(e){alert('儲存失敗：'+e.message);}
+}
 async function registerArrival(id){
   const o=ORDERS.find(x=>x.id===id);if(!o)return;
   const arrivals=(o.products||[]).map((p,i)=>{const el=document.getElementById('arrq-'+id+'-'+i);return el?el.value:'';});
