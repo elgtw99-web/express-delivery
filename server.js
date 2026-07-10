@@ -179,15 +179,22 @@ app.get('/api/orders', async (req, res) => {
 
 app.post('/api/orders', async (req, res) => {
   try {
-    const { items, supplier, purchaseTime, orderNo, trackNo, carrier, lineTo, phone } = req.body;
+    const { items, products, supplier, purchaseTime, orderNo, trackNo, carrier, lineTo, phone } = req.body;
     if (!trackNo) return res.status(400).json({ error: '缺少快遞號碼 trackNo' });
     const com = (carrier && carrier !== 'auto') ? carrier : autoDetectServer(trackNo);
     const id = 'o' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    // 多產品：[{name, orderedQty}] → 標準化並補到貨欄位
+    let prods = Array.isArray(products)
+      ? products.map(p => ({ name: (p.name || '').trim(), orderedQty: Number(p.orderedQty) || 0, arrivedQty: Number(p.arrivedQty) || 0 })).filter(p => p.name)
+      : [];
+    if (!prods.length && items) prods = [{ name: String(items).trim(), orderedQty: 0, arrivedQty: 0 }]; // 相容舊單一品項
+    const itemsSummary = prods.map(p => p.name + (p.orderedQty ? ' x' + p.orderedQty : '')).join('、');
     const order = {
-      id, items: items || '', supplier: supplier || '', purchaseTime: purchaseTime || '',
+      id, products: prods, items: itemsSummary, supplier: supplier || '', purchaseTime: purchaseTime || '',
       orderNo: orderNo || '', trackNo, carrier: com, carrierName: CARRIER_NAME[com] || com,
       phone: phone || '', lineTo: lineTo || DEFAULT_LINE_TO, state: null, stateLabel: '待更新',
-      latest: '', timeline: [], notified: false, subscribed: false, createdAt: Date.now(), lastUpdate: null
+      latest: '', timeline: [], notified: false, subscribed: false,
+      arrived: false, arrivalDate: '', arrivalNote: '', createdAt: Date.now(), lastUpdate: null
     };
     let warn = '';
     try { await kd100Subscribe(trackNo, com, phone); order.subscribed = true; }
@@ -219,24 +226,66 @@ app.delete('/api/orders/:id', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 登記到貨（進貨單）→ 更新訂單 + LINE 通知業務
+// 登記到貨（進貨單）→ 逐產品更新到貨數量、對比訂購數 + LINE 通知業務
 app.post('/api/orders/:id/arrival', async (req, res) => {
   try {
     const o = await orderGet(req.params.id);
     if (!o) return res.status(404).json({ error: '找不到訂單' });
-    const { arrivalQty, arrivalNote, receiptNo } = req.body;
-    o.arrived = true;
-    o.arrivalDate = new Date().toISOString().slice(0, 10);
-    o.arrivalQty = arrivalQty || '';
+    const { arrivals, arrivalNote } = req.body;   // arrivals: 依產品順序的到貨數量陣列
+    if (!Array.isArray(o.products)) o.products = [];
+    if (Array.isArray(arrivals)) {
+      arrivals.forEach((q, i) => { if (o.products[i]) o.products[i].arrivedQty = Number(q) || 0; });
+    }
     o.arrivalNote = arrivalNote || '';
-    o.receiptNo = receiptNo || '';
+    o.arrivalDate = new Date().toISOString().slice(0, 10);
+    o.arrived = o.products.length > 0 && o.products.every(p => p.orderedQty > 0 && p.arrivedQty >= p.orderedQty);
     o.lastUpdate = Date.now();
     await orderSet(o);
-    const msg = `📥 到貨報備\n品項：${o.items || '-'}\n供應商：${o.supplier || '-'}\n`
-      + `訂單編號：${o.orderNo || '-'}\n到貨數量：${o.arrivalQty || '-'}\n`
+    // LINE 通知（逐產品訂購 vs 到貨）
+    const lines = o.products.map(p => {
+      const short = (p.orderedQty || 0) - (p.arrivedQty || 0);
+      return `・${p.name}：訂購 ${p.orderedQty} / 到貨 ${p.arrivedQty}` + (short > 0 ? `（短少 ${short}）` : short < 0 ? `（多 ${-short}）` : ' ✅');
+    }).join('\n');
+    const head = o.arrived ? '📥 到貨報備（已到齊）' : '📥 到貨報備（部分到貨）';
+    const msg = `${head}\n訂單編號：${o.orderNo || '-'}\n供應商：${o.supplier || '-'}\n${lines}\n`
       + (o.arrivalNote ? `備註：${o.arrivalNote}\n` : '') + `請業務確認進貨。`;
     await pushLine(o.lineTo, msg);
     res.json({ ok: true, order: o });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 批量匯入（前端已解析 Excel + 簡轉繁）→ 建立多筆訂單
+app.post('/api/orders/batch', async (req, res) => {
+  try {
+    const { orders, track } = req.body;
+    if (!Array.isArray(orders) || !orders.length) return res.status(400).json({ error: '沒有可匯入的訂單' });
+    let created = 0, skipped = 0; const errors = [];
+    for (const it of orders) {
+      try {
+        if (!it.trackNo) { errors.push('缺運單號：' + (it.orderNo || '(無編號)')); continue; }
+        if (await orderFindByTrack(String(it.trackNo))) { skipped++; continue; }   // 已存在則略過，避免重複
+        const com = (it.carrier && it.carrier !== 'auto') ? it.carrier : autoDetectServer(it.trackNo);
+        const id = 'o' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        const prods = Array.isArray(it.products)
+          ? it.products.map(p => ({ name: (p.name || '').trim(), orderedQty: Number(p.orderedQty) || 0, arrivedQty: 0, unitPrice: Number(p.unitPrice) || 0, unit: p.unit || '' })).filter(p => p.name)
+          : [];
+        const order = {
+          id, products: prods, items: prods.map(p => p.name + (p.orderedQty ? ' x' + p.orderedQty : '')).join('、'),
+          supplier: it.supplier || '', purchaseTime: it.purchaseTime || '', orderNo: it.orderNo || '',
+          trackNo: String(it.trackNo).trim(), carrier: com, carrierName: CARRIER_NAME[com] || com, phone: it.phone || '',
+          lineTo: DEFAULT_LINE_TO, state: null, stateLabel: '待更新', latest: '', timeline: [], notified: false, subscribed: false,
+          arrived: false, arrivalDate: '', arrivalNote: it.note || '',
+          region: '大陸', currency: 'RMB', goodsTotal: Number(it.goodsTotal) || 0, freight: Number(it.freight) || 0, actualPay: Number(it.actualPay) || 0,
+          createdAt: Date.now(), lastUpdate: null, source: 'import'
+        };
+        if (track) {
+          try { await kd100Subscribe(order.trackNo, com, order.phone); order.subscribed = true; } catch (e) {}
+          try { const q = await kd100Query(order.trackNo, com, order.phone); order.state = q.state; order.stateLabel = q.stateLabel; order.latest = q.list[0]?.text || ''; order.timeline = q.list; order.lastUpdate = Date.now(); } catch (e) {}
+        }
+        await orderSet(order); created++;
+      } catch (e) { errors.push(e.message); }
+    }
+    res.json({ ok: true, created, skipped, total: orders.length, errors });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
