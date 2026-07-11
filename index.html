@@ -359,7 +359,7 @@ function render(){
         <div style="font-size:12px;color:var(--sub);margin-bottom:6px">可修改品名／數量／單價，或增刪品項（改完會自動重算貨品成本）</div>
         <div id="prodrows-${o.id}">${(o.products||[]).map(p=>prodRowHtml(p)).join('')}</div>
         <div style="display:flex;gap:8px;margin-top:6px">
-          <button class="btn-ghost btn-sm" onclick="addProdRow('${o.id}')">＋ 新增品項</button>
+          <button class="btn-ghost btn-sm" onclick="addEditRow('${o.id}')">＋ 新增品項</button>
           <button class="btn-sm" onclick="saveProducts('${o.id}')">儲存品項</button>
         </div>
       </div>
@@ -392,7 +392,7 @@ function prodRowHtml(p){p=p||{};
     +'<button class="btn-ghost btn-sm" title="刪除此品項" onclick="this.closest(\'.prow\').remove()">✕</button>'
     +'</div>';
 }
-function addProdRow(id){const c=document.getElementById('prodrows-'+id);if(c)c.insertAdjacentHTML('beforeend',prodRowHtml({}));}
+function addEditRow(id){const c=document.getElementById('prodrows-'+id);if(c)c.insertAdjacentHTML('beforeend',prodRowHtml({}));}
 async function saveProducts(id){
   const o=ORDERS.find(x=>x.id===id);if(!o)return;
   const rows=[...document.querySelectorAll('#prodrows-'+id+' .prow')];
@@ -659,7 +659,15 @@ async function loadConfig(){
 document.getElementById('fTrackNo').addEventListener('keydown',e=>{if(e.key==='Enter')addOrder();});
 addProdRow();                    // 預設一列產品輸入
 loadOrders();loadConfig();
-setInterval(loadOrders,30000);   // 每 30 秒自動同步，多人協作看到彼此更新
+function autoSync(){
+  // 使用者正在編輯（輸入框聚焦，或有面板開著）時，跳過這次自動重畫，避免打斷編輯
+  const ae=document.activeElement;
+  if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+  const open=[...document.querySelectorAll('div[id^="prod-"],div[id^="arr-"],div[id^="cost-"]')].some(e=>e.style.display==='block');
+  if(open) return;
+  loadOrders();
+}
+setInterval(autoSync,60000);   // 每 60 秒自動同步；編輯中自動略過，避免打斷；也順便省一半讀取額度
 </script>
 </body>
 </html>
