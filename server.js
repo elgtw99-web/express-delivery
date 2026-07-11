@@ -22,6 +22,9 @@ app.use(express.urlencoded({ extended: true, limit: '12mb' }));
 app.use(express.json({ limit: '12mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(express.static(__dirname));
 
+// 輕量健康檢查（不碰資料庫，供 Render 健康檢查用，避免部署卡在健康檢查）
+app.get('/healthz', (req, res) => res.status(200).send('ok'));
+
 // ---- 設定 ----
 // .trim() 防止貼上時多帶空白/換行導致簽名錯誤
 const KD_CUSTOMER = (process.env.KD100_CUSTOMER || '').trim();
