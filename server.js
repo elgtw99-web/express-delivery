@@ -290,6 +290,31 @@ app.post('/api/orders/:id/cost', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 編輯品項：修改品名／數量／單價（增刪品項），並重算貨品成本
+app.post('/api/orders/:id/products', async (req, res) => {
+  try {
+    const o = await orderGet(req.params.id);
+    if (!o) return res.status(404).json({ error: '找不到訂單' });
+    const { products } = req.body;
+    if (!Array.isArray(products)) return res.status(400).json({ error: '缺少 products' });
+    o.products = products.map(p => ({
+      name: (p.name || '').trim(),
+      orderedQty: Number(p.orderedQty) || 0,
+      unitPrice: Number(p.unitPrice) || 0,
+      arrivedQty: Number(p.arrivedQty) || 0,
+      defectQty: Number(p.defectQty) || 0,
+      damagedQty: Number(p.damagedQty) || 0,
+      unit: p.unit || ''
+    })).filter(p => p.name);
+    o.items = o.products.map(p => p.name + (p.orderedQty ? ' x' + p.orderedQty : '')).join('、');
+    o.goodsTotal = o.products.reduce((s, p) => s + (p.unitPrice || 0) * (p.orderedQty || 0), 0);
+    o.actualPay = (o.goodsTotal || 0) + (o.freight || 0);
+    o.lastUpdate = Date.now();
+    await orderSet(o);
+    res.json({ ok: true, order: o });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 批量匯入（前端已解析 Excel + 簡轉繁）→ 建立多筆訂單
 app.post('/api/orders/batch', async (req, res) => {
   try {

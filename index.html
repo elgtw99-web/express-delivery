@@ -328,6 +328,7 @@ function render(){
         <button class="btn-ghost btn-sm" onclick="refreshOrder('${o.id}')">↻ 更新</button>
         <button class="btn-ghost btn-sm" onclick="toggleArrival('${o.id}')">${o.arrived?'✏️ 更新到貨':'📥 登記到貨'}</button>
         <button class="btn-ghost btn-sm" onclick="toggleCost('${o.id}')">💰 運費/成本</button>
+        <button class="btn-ghost btn-sm" onclick="toggleProd('${o.id}')">✏️ 改品項</button>
         <button class="btn-ghost btn-sm" onclick="genReceipt('${o.id}')">🖨️ 進貨單</button>
         <button class="btn-ghost btn-sm" onclick="delOrder('${o.id}')">移除</button>
       </div>
@@ -354,6 +355,14 @@ function render(){
           <button class="btn-sm" onclick="registerArrival('${o.id}')">確認到貨並通知</button>
         </div>
       </div>
+      <div id="prod-${o.id}" style="display:none;margin-top:10px;padding:12px;background:var(--card2);border:1px solid var(--line);border-radius:10px">
+        <div style="font-size:12px;color:var(--sub);margin-bottom:6px">可修改品名／數量／單價，或增刪品項（改完會自動重算貨品成本）</div>
+        <div id="prodrows-${o.id}">${(o.products||[]).map(p=>prodRowHtml(p)).join('')}</div>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button class="btn-ghost btn-sm" onclick="addProdRow('${o.id}')">＋ 新增品項</button>
+          <button class="btn-sm" onclick="saveProducts('${o.id}')">儲存品項</button>
+        </div>
+      </div>
       <ul class="timeline" id="tl-${o.id}">${tl||'<li class="t-text" style="padding-left:0;color:var(--sub)">尚無軌跡</li>'}</ul>
       </div>
     </details>`;
@@ -373,6 +382,34 @@ function setFilter(el){FILTER=el.dataset.f;document.querySelectorAll('.chip').fo
 function toggleTl(id){document.getElementById('tl-'+id).classList.toggle('open');}
 function toggleArrival(id){const el=document.getElementById('arr-'+id);el.style.display=el.style.display==='none'?'block':'none';}
 function toggleCost(id){const el=document.getElementById('cost-'+id);el.style.display=el.style.display==='none'?'block':'none';}
+function toggleProd(id){const el=document.getElementById('prod-'+id);el.style.display=el.style.display==='none'?'block':'none';}
+function prodRowHtml(p){p=p||{};
+  const nm=(''+(p.name||'')).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  return '<div class="prow" data-aq="'+(p.arrivedQty||0)+'" data-dq="'+(p.defectQty||0)+'" data-xq="'+(p.damagedQty||0)+'" style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">'
+    +'<input class="pn" value="'+nm+'" placeholder="品名/規格" style="flex:3;min-width:150px">'
+    +'<input class="pq" type="number" min="0" value="'+(p.orderedQty||'')+'" placeholder="數量" style="flex:1;min-width:64px">'
+    +'<input class="pp" type="number" min="0" step="0.01" value="'+(p.unitPrice||'')+'" placeholder="單價" style="flex:1;min-width:72px">'
+    +'<button class="btn-ghost btn-sm" title="刪除此品項" onclick="this.closest(\'.prow\').remove()">✕</button>'
+    +'</div>';
+}
+function addProdRow(id){const c=document.getElementById('prodrows-'+id);if(c)c.insertAdjacentHTML('beforeend',prodRowHtml({}));}
+async function saveProducts(id){
+  const o=ORDERS.find(x=>x.id===id);if(!o)return;
+  const rows=[...document.querySelectorAll('#prodrows-'+id+' .prow')];
+  const products=rows.map(r=>({
+    name:(r.querySelector('.pn').value||'').trim(),
+    orderedQty:Number(r.querySelector('.pq').value)||0,
+    unitPrice:Number(r.querySelector('.pp').value)||0,
+    arrivedQty:Number(r.dataset.aq)||0,
+    defectQty:Number(r.dataset.dq)||0,
+    damagedQty:Number(r.dataset.xq)||0
+  })).filter(p=>p.name);
+  if(!products.length){alert('至少要保留一個品項');return;}
+  try{
+    const r=await fetch(API_BASE+'/api/orders/'+id+'/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({products})});
+    const j=await jsonOrThrow(r);Object.assign(o,j.order);render();
+  }catch(e){alert('儲存失敗：'+e.message);}
+}
 async function saveCost(id){
   const o=ORDERS.find(x=>x.id===id);if(!o)return;
   const body={intlFreight:v('costf-'+id),shipMethod:v('costm-'+id),exchangeRate:v('costr-'+id),phone:v('costp-'+id).trim()};
