@@ -237,13 +237,16 @@ app.post('/api/orders/:id/arrival', async (req, res) => {
   try {
     const o = await orderGet(req.params.id);
     if (!o) return res.status(404).json({ error: '找不到訂單' });
-    const { arrivals, defects, arrivalNote, receivedBy } = req.body;   // arrivals/defects: 依產品順序的實收/瑕疵數量陣列
+    const { arrivals, defects, damaged, arrivalNote, receivedBy } = req.body;   // 依產品順序：實收/瑕疵/損毀數量陣列
     if (!Array.isArray(o.products)) o.products = [];
     if (Array.isArray(arrivals)) {
       arrivals.forEach((q, i) => { if (o.products[i]) o.products[i].arrivedQty = Number(q) || 0; });
     }
     if (Array.isArray(defects)) {
       defects.forEach((d, i) => { if (o.products[i]) o.products[i].defectQty = Number(d) || 0; });
+    }
+    if (Array.isArray(damaged)) {
+      damaged.forEach((d, i) => { if (o.products[i]) o.products[i].damagedQty = Number(d) || 0; });
     }
     o.arrivalNote = arrivalNote || '';
     o.receivedBy = receivedBy || o.receivedBy || '';
@@ -254,8 +257,9 @@ app.post('/api/orders/:id/arrival', async (req, res) => {
     // LINE 通知（逐產品訂購 vs 實收，含瑕疵）
     const lines = o.products.map(p => {
       const short = (p.orderedQty || 0) - (p.arrivedQty || 0);
-      const def = p.defectQty > 0 ? `，瑕疵/損壞 ${p.defectQty}` : '';
-      return `・${p.name}：訂購 ${p.orderedQty} / 實收 ${p.arrivedQty}${def}` + (short > 0 ? `（短少 ${short}）` : short < 0 ? `（多 ${-short}）` : ' ✅');
+      const def = p.defectQty > 0 ? `，瑕疵 ${p.defectQty}` : '';
+      const dmg = p.damagedQty > 0 ? `，損毀 ${p.damagedQty}` : '';
+      return `・${p.name}：訂購 ${p.orderedQty} / 實收 ${p.arrivedQty}${def}${dmg}` + (short > 0 ? `（短少 ${short}）` : short < 0 ? `（多出 ${-short}）` : ' ✅');
     }).join('\n');
     const head = o.arrived ? '📥 到貨清單（已到齊）' : '📥 到貨清單（部分到貨）';
     const msg = `${head}\n日期：${o.arrivalDate}\n供應商：${o.supplier || '-'}\n訂單：${o.orderNo || '-'}\n────────\n${lines}\n────────\n`
@@ -417,10 +421,21 @@ function formatOrderReply(o, q){
     + `目前狀態：${q?.stateLabel || o.stateLabel}\n`
     + (latest ? `最新：${latest.text}\n時間：${latest.time}` : '');
   if (o.arrivalDate) {
-    const al = (o.products || []).map(p => `・${p.name}：訂購${p.orderedQty}/實收${p.arrivedQty || 0}${p.defectQty > 0 ? ' 瑕疵' + p.defectQty : ''}`).join('\n');
+    const al = (o.products || []).map(p => `・${p.name}：訂購${p.orderedQty}/實收${p.arrivedQty || 0}${p.defectQty > 0 ? ' 瑕疵' + p.defectQty : ''}${p.damagedQty > 0 ? ' 損毀' + p.damagedQty : ''}`).join('\n');
     s += `\n\n📥 到貨清單（${o.arrivalDate}）\n${al}` + (o.receivedBy ? `\n收貨人：${o.receivedBy}` : '');
   }
   return s;
+}
+// 群組指令「最近進貨」：列出近期已登記到貨的訂單
+function formatRecentArrivals(all){
+  const arrived = (all || []).filter(o => o.arrivalDate).sort((a, b) => String(b.arrivalDate).localeCompare(String(a.arrivalDate)));
+  if (!arrived.length) return '目前沒有已登記到貨的紀錄。\n（倉庫在系統按「登記到貨」後，這裡就會列出）';
+  const top = arrived.slice(0, 10);
+  const lines = top.map(o => {
+    const items = (o.products || []).map(p => `${p.name}×${p.arrivedQty || 0}${p.defectQty > 0 ? '(瑕疵' + p.defectQty + ')' : ''}${p.damagedQty > 0 ? '(損毀' + p.damagedQty + ')' : ''}`).join('、') || (o.items || '-');
+    return `📅 ${o.arrivalDate}｜${o.supplier || '-'}｜單 ${o.orderNo || '-'}\n　${items}${o.receivedBy ? '　收貨：' + o.receivedBy : ''}`;
+  }).join('\n────────\n');
+  return `📥 最近進貨（近 ${top.length} 筆）\n────────\n${lines}`;
 }
 
 // ---- LINE Webhook：群組內打關鍵字主動查詢 ----
@@ -437,8 +452,11 @@ app.post('/api/line/webhook', async (req, res) => {
       if (ev.type !== 'message' || ev.message?.type !== 'text') continue;
       const text = ev.message.text.trim();
       let reply;
-      const order = await findOrderByKeyword(text);
-      if (order) {
+      const _recent = /最近.{0,3}(進貨|到貨)|進貨清單|到貨清單|近期.{0,3}(進貨|到貨)|哪些.{0,3}(進貨|到貨)/.test(text);
+      const order = _recent ? null : await findOrderByKeyword(text);
+      if (_recent) {
+        reply = formatRecentArrivals(await ordersAll());
+      } else if (order) {
         let q = null;
         try { q = await kd100Query(order.trackNo, order.carrier, order.phone); } catch (e) {}
         reply = formatOrderReply(order, q);
@@ -448,7 +466,7 @@ app.post('/api/line/webhook', async (req, res) => {
           reply = `📦 ${text}\n目前狀態：${q.stateLabel}\n最新：${q.list[0]?.text || '查無軌跡'}`;
         } catch (e) { reply = `查不到「${text}」的物流資料`; }
       } else {
-        reply = '請輸入「訂單編號 / 快遞單號 / 品項 / 供應商」即可查詢目前物流狀態。\n例：查 SF1234567890';
+        reply = '可查詢：\n・訂單編號 / 快遞單號 / 品項 / 供應商 → 目前物流狀態\n・輸入「最近進貨」→ 近期到貨清單\n例：查 SF1234567890';
       }
       await replyLine(ev.replyToken, reply);
     }
